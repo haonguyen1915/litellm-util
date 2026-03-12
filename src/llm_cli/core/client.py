@@ -6,6 +6,7 @@ import httpx
 
 from llm_cli.core.context import CurrentContext, get_current_context
 from llm_cli.models.key import VirtualKey
+from llm_cli.models.provider import ModelInfo, ProviderInfo
 from llm_cli.models.team import Team
 
 
@@ -51,6 +52,7 @@ class LiteLLMClient:
         else:
             self._context = get_current_context(org_override, env_override)
 
+        self._model_cost_cache: dict[str, Any] | None = None
         self.base_url = self._context.url.rstrip("/")
         self.headers = {
             "Authorization": f"Bearer {self._context.master_key}",
@@ -147,6 +149,162 @@ class LiteLLMClient:
             raise
         except Exception as e:
             raise APIError(f"Unexpected error: {e}")
+
+    # ==================== Provider Operations ====================
+
+    def list_providers(self) -> list[ProviderInfo]:
+        """List providers grouped from models deployed on proxy.
+
+        Fetches /model/info and groups models by provider prefix.
+
+        Returns:
+            List of ProviderInfo with real model data from proxy.
+        """
+        raw_models = self.list_models()
+
+        providers_map: dict[str, list[ModelInfo]] = {}
+
+        for m in raw_models:
+            litellm_model = m.get("litellm_params", {}).get("model", "")
+            model_name = m.get("model_name", "")
+            info = m.get("model_info", {}) or {}
+
+            if "/" in litellm_model:
+                provider_id = litellm_model.split("/")[0]
+            else:
+                provider_id = "openai"
+
+            model_info = self._parse_model_info(model_name, provider_id, info)
+
+            if provider_id not in providers_map:
+                providers_map[provider_id] = []
+            providers_map[provider_id].append(model_info)
+
+        result: list[ProviderInfo] = []
+        for pid, models in sorted(providers_map.items()):
+            result.append(
+                ProviderInfo(
+                    id=pid,
+                    name=pid.replace("_", " ").title(),
+                    description=f"{len(models)} models deployed",
+                    models=models,
+                )
+            )
+
+        return result
+
+    def list_supported_models(self, provider_id: str | None = None) -> list[ProviderInfo]:
+        """List all models supported by LiteLLM.
+
+        Tries /model_cost endpoint first, falls back to GitHub JSON.
+        Groups by litellm_provider. Only includes 'chat' mode models.
+
+        Args:
+            provider_id: Optional filter by provider.
+
+        Returns:
+            List of ProviderInfo with all supported models.
+        """
+        response = self._fetch_model_cost_map()
+
+        providers_map: dict[str, list[ModelInfo]] = {}
+
+        for model_key, info in response.items():
+            if not isinstance(info, dict):
+                continue
+
+            # Only include chat models
+            if info.get("mode") != "chat":
+                continue
+
+            pid = info.get("litellm_provider", "")
+            if not pid:
+                continue
+
+            # Filter by provider if specified
+            if provider_id and pid != provider_id:
+                continue
+
+            model_info = self._parse_model_info(model_key, pid, info)
+
+            if pid not in providers_map:
+                providers_map[pid] = []
+            providers_map[pid].append(model_info)
+
+        result: list[ProviderInfo] = []
+        for pid, models in sorted(providers_map.items()):
+            result.append(
+                ProviderInfo(
+                    id=pid,
+                    name=pid.replace("_", " ").replace("-", " ").title(),
+                    description=f"{len(models)} models available",
+                    models=models,
+                )
+            )
+
+        return result
+
+    def _fetch_model_cost_map(self) -> dict[str, Any]:
+        """Fetch model cost map from proxy or GitHub.
+
+        Tries /model_cost endpoint first, falls back to LiteLLM GitHub.
+        Results are cached for the lifetime of the client.
+        """
+        if self._model_cost_cache is not None:
+            return self._model_cost_cache
+
+        # Try proxy endpoint first
+        try:
+            result = self._request("GET", "/model_cost")
+            if isinstance(result, dict) and len(result) > 10:
+                self._model_cost_cache = result
+                return result
+        except (APIError, ConnectionError):
+            pass
+
+        # Fallback: fetch from LiteLLM GitHub
+        url = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(url)
+                if resp.status_code == 200:
+                    result = resp.json()
+                    self._model_cost_cache = result
+                    return result
+        except Exception:
+            pass
+
+        raise APIError("Could not fetch model cost data from proxy or GitHub")
+
+    @staticmethod
+    def _parse_model_info(model_id: str, provider_id: str, info: dict) -> ModelInfo:
+        """Parse model info dict into ModelInfo."""
+        capabilities: list[str] = []
+        if info.get("supports_vision"):
+            capabilities.append("vision")
+        if info.get("supports_function_calling"):
+            capabilities.append("tools")
+        if info.get("supports_reasoning"):
+            capabilities.append("reasoning")
+        if info.get("supports_audio_input"):
+            capabilities.append("audio")
+        if info.get("supports_web_search"):
+            capabilities.append("web_search")
+
+        input_cost = info.get("input_cost_per_token")
+        output_cost = info.get("output_cost_per_token")
+        input_price = (input_cost * 1_000_000) if input_cost else 0.0
+        output_price = (output_cost * 1_000_000) if output_cost else 0.0
+
+        return ModelInfo(
+            id=model_id,
+            provider=provider_id,
+            context_window=info.get("max_input_tokens") or 0,
+            max_output=info.get("max_output_tokens") or 0,
+            input_price=round(input_price, 2),
+            output_price=round(output_price, 2),
+            capabilities=capabilities,
+        )
 
     # ==================== Model Operations ====================
 

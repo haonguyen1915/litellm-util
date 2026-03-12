@@ -5,6 +5,7 @@ Requires a running LiteLLM Proxy server.
 """
 
 import os
+import time
 import uuid
 
 import pytest
@@ -66,6 +67,104 @@ class TestHealthCheck:
         assert bad_client.health_check() is False
 
 
+# ==================== Provider Operations ====================
+
+
+class TestProviderOperations:
+    def test_list_providers(self, client):
+        """Should list providers grouped from proxy models."""
+        providers = client.list_providers()
+
+        assert isinstance(providers, list)
+        assert len(providers) > 0
+
+        # Each provider should have expected structure
+        for p in providers:
+            assert p.id
+            assert p.name
+            assert len(p.models) > 0
+            assert p.description
+
+    def test_providers_have_model_info(self, client):
+        """Provider models should have pricing and token info from proxy."""
+        providers = client.list_providers()
+
+        # Find a provider with populated data (not all models have full info)
+        models_with_pricing = []
+        for p in providers:
+            for m in p.models:
+                if m.input_price > 0:
+                    models_with_pricing.append(m)
+
+        assert len(models_with_pricing) > 0, "At least some models should have pricing"
+
+        # Check a model with pricing has valid data
+        model = models_with_pricing[0]
+        assert model.id
+        assert model.provider
+        assert model.input_price > 0
+        assert model.output_price > 0
+
+    def test_providers_group_by_prefix(self, client):
+        """Models should be grouped by provider prefix."""
+        providers = client.list_providers()
+        provider_ids = [p.id for p in providers]
+
+        # The test proxy has anthropic and azure models
+        assert "anthropic" in provider_ids or "openai" in provider_ids
+
+
+# ==================== Supported Models (model_cost) ====================
+
+
+class TestSupportedModels:
+    def test_list_supported_models(self, client):
+        """Should list all LiteLLM-supported providers from model cost map."""
+        providers = client.list_supported_models()
+
+        assert isinstance(providers, list)
+        # LiteLLM supports many providers (50+)
+        assert len(providers) > 30
+
+        for p in providers:
+            assert p.id
+            assert p.name
+            assert len(p.models) > 0
+
+    def test_supported_models_filter_by_provider(self, client):
+        """Should filter supported models by provider."""
+        providers = client.list_supported_models(provider_id="anthropic")
+
+        assert len(providers) == 1
+        assert providers[0].id == "anthropic"
+        assert len(providers[0].models) > 5
+
+        # All models should belong to anthropic
+        for m in providers[0].models:
+            assert m.provider == "anthropic"
+
+    def test_supported_models_have_pricing(self, client):
+        """Supported models should have pricing info."""
+        providers = client.list_supported_models(provider_id="openai")
+
+        assert len(providers) == 1
+        models_with_pricing = [m for m in providers[0].models if m.input_price > 0]
+        assert len(models_with_pricing) > 0
+
+    def test_supported_models_have_capabilities(self, client):
+        """Supported models should have capability info."""
+        providers = client.list_supported_models(provider_id="anthropic")
+
+        assert len(providers) == 1
+        models_with_caps = [m for m in providers[0].models if len(m.capabilities) > 0]
+        assert len(models_with_caps) > 0
+
+    def test_supported_models_nonexistent_provider(self, client):
+        """Non-existent provider should return empty list."""
+        providers = client.list_supported_models(provider_id="nonexistent_xxx")
+        assert providers == []
+
+
 # ==================== Model Operations ====================
 
 
@@ -103,6 +202,9 @@ class TestModelOperations:
         model_id = created[0].get("model_info", {}).get("id")
         assert model_id is not None
         client.delete_model(model_id)
+
+        # Wait for proxy cache to refresh
+        time.sleep(2)
 
         # Verify it's gone
         models_after = client.list_models()
