@@ -1,0 +1,66 @@
+[tool.poetry]
+name = "litellm-util"
+version = "0.1.0"
+description = "CLI tool for managing LiteLLM Proxy Server"
+authors = ["Hao Nguyen <hao.nguyen@example.com>"]
+license = "MIT"
+packages = [{include = "llm_cli", from = "src"}]
+
+[tool.poetry.scripts]
+llm = "llm_cli.main:app"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+# CLI Framework
+typer = ">=0.12.0"
+
+# Interactive Prompts
+questionary = "^2.0.1"
+
+# Pretty Output
+rich = "^13.7.0"
+
+# HTTP Client
+httpx = "^0.27.0"
+
+# Data Validation & Settings
+pydantic = "^2.6.0"
+pydantic-settings = "^2.2.0"
+
+# Config
+pyyaml = "^6.0.1"
+
+# Clipboard
+pyperclip = "^1.8.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
+pytest-asyncio = "^0.23.0"
+mypy = "^1.8.0"
+ruff = "^0.2.0"
+pre-commit = "^3.6.0"
+
+# Type stubs
+types-pyyaml = "^6.0.12"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

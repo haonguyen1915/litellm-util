@@ -1,0 +1,393 @@
+"""LiteLLM Proxy API client."""
+
+from typing import Any
+
+import httpx
+
+from llm_cli.core.context import CurrentContext, get_current_context
+from llm_cli.models.key import VirtualKey
+from llm_cli.models.team import Team
+
+
+class APIError(Exception):
+    """Raised when API request fails."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        self.message = message
+        self.status_code = status_code
+        super().__init__(message)
+
+
+class ConnectionError(Exception):
+    """Raised when cannot connect to proxy."""
+
+    pass
+
+
+class AuthenticationError(Exception):
+    """Raised when authentication fails."""
+
+    pass
+
+
+class LiteLLMClient:
+    """Client for interacting with LiteLLM Proxy API."""
+
+    def __init__(
+        self,
+        context: CurrentContext | None = None,
+        org_override: str | None = None,
+        env_override: str | None = None,
+    ):
+        """Initialize client with context.
+
+        Args:
+            context: Optional pre-loaded context.
+            org_override: Override organization.
+            env_override: Override environment.
+        """
+        if context:
+            self._context = context
+        else:
+            self._context = get_current_context(org_override, env_override)
+
+        self.base_url = self._context.url.rstrip("/")
+        self.headers = {
+            "Authorization": f"Bearer {self._context.master_key}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def context(self) -> CurrentContext:
+        """Get current context."""
+        return self._context
+
+    def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
+        """Handle API response and errors.
+
+        Args:
+            response: HTTP response object.
+
+        Returns:
+            Response JSON data.
+
+        Raises:
+            AuthenticationError: If 401/403.
+            APIError: For other errors.
+        """
+        if response.status_code == 401 or response.status_code == 403:
+            raise AuthenticationError(
+                "Authentication failed. Master key may be invalid or expired."
+            )
+
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                if isinstance(error_data, dict) and "error" in error_data:
+                    err = error_data["error"]
+                    message = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                else:
+                    message = error_data.get(
+                        "detail", error_data.get("message", str(error_data))
+                    )
+            except Exception:
+                message = response.text or f"HTTP {response.status_code}"
+
+            raise APIError(message, response.status_code)
+
+        try:
+            return response.json()
+        except Exception:
+            return {}
+
+    def _request(
+        self,
+        method: str,
+        endpoint: str,
+        json: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | list:
+        """Make HTTP request to API.
+
+        Args:
+            method: HTTP method.
+            endpoint: API endpoint.
+            json: JSON body.
+            params: Query parameters.
+
+        Returns:
+            Response data (dict or list).
+
+        Raises:
+            ConnectionError: If cannot connect.
+            AuthenticationError: If auth fails.
+            APIError: For other errors.
+        """
+        url = f"{self.base_url}{endpoint}"
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.request(
+                    method=method,
+                    url=url,
+                    headers=self.headers,
+                    json=json,
+                    params=params,
+                )
+                return self._handle_response(response)
+        except httpx.ConnectError:
+            raise ConnectionError(
+                f"Cannot connect to LiteLLM Proxy at {self.base_url}"
+            )
+        except httpx.TimeoutException:
+            raise ConnectionError(
+                f"Connection to {self.base_url} timed out"
+            )
+        except (AuthenticationError, APIError, ConnectionError):
+            raise
+        except Exception as e:
+            raise APIError(f"Unexpected error: {e}")
+
+    # ==================== Model Operations ====================
+
+    def list_models(self) -> list[dict[str, Any]]:
+        """List all models on proxy.
+
+        Returns:
+            List of model info dicts.
+        """
+        response = self._request("GET", "/model/info")
+        return response.get("data", [])
+
+    def create_model(
+        self,
+        model_name: str,
+        litellm_params: dict[str, Any],
+        model_info: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a new model on proxy.
+
+        Args:
+            model_name: Display name/alias for the model.
+            litellm_params: LiteLLM parameters (model, api_key, etc.).
+            model_info: Optional metadata.
+
+        Returns:
+            Created model info.
+        """
+        data = {
+            "model_name": model_name,
+            "litellm_params": litellm_params,
+        }
+        if model_info:
+            data["model_info"] = model_info
+
+        return self._request("POST", "/model/new", json=data)
+
+    def delete_model(self, model_id: str) -> dict[str, Any]:
+        """Delete a model from proxy.
+
+        Args:
+            model_id: Model ID to delete.
+
+        Returns:
+            Response data.
+        """
+        return self._request("POST", "/model/delete", json={"id": model_id})
+
+    # ==================== Key Operations ====================
+
+    def list_keys(self) -> list[VirtualKey]:
+        """List all virtual keys.
+
+        Returns:
+            List of VirtualKey objects.
+        """
+        response = self._request(
+            "GET", "/key/list", params={"return_full_object": "true", "limit": 100}
+        )
+        keys_data = response.get("keys", response.get("data", []))
+
+        keys = []
+        for key_data in keys_data:
+            try:
+                keys.append(VirtualKey.model_validate(key_data))
+            except Exception:
+                # Skip malformed keys
+                continue
+
+        return keys
+
+    def create_key(
+        self,
+        key_alias: str | None = None,
+        team_id: str | None = None,
+        models: list[str] | None = None,
+        max_budget: float | None = None,
+        budget_duration: str | None = None,
+        expires: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a new virtual key.
+
+        Args:
+            key_alias: Display name for the key.
+            team_id: Team to assign key to.
+            models: List of allowed model names.
+            max_budget: Maximum budget.
+            budget_duration: Budget period (e.g., 'monthly').
+            expires: Expiration date string.
+            metadata: Additional metadata.
+
+        Returns:
+            Created key info including the key itself.
+        """
+        data: dict[str, Any] = {}
+
+        if key_alias:
+            data["key_alias"] = key_alias
+        if team_id:
+            data["team_id"] = team_id
+        if models:
+            data["models"] = models
+        if max_budget is not None:
+            data["max_budget"] = max_budget
+        if budget_duration:
+            data["budget_duration"] = budget_duration
+        if expires:
+            data["expires"] = expires
+        if metadata:
+            data["metadata"] = metadata
+
+        return self._request("POST", "/key/generate", json=data)
+
+    def delete_key(self, key: str) -> dict[str, Any]:
+        """Delete a virtual key.
+
+        Args:
+            key: The key token to delete.
+
+        Returns:
+            Response data.
+        """
+        return self._request("POST", "/key/delete", json={"keys": [key]})
+
+    # ==================== Team Operations ====================
+
+    def list_teams(self) -> list[Team]:
+        """List all teams.
+
+        Returns:
+            List of Team objects.
+        """
+        response = self._request("GET", "/team/list")
+        teams_data = response if isinstance(response, list) else response.get("teams", [])
+
+        teams = []
+        for team_data in teams_data:
+            try:
+                teams.append(Team.model_validate(team_data))
+            except Exception:
+                # Skip malformed teams
+                continue
+
+        return teams
+
+    def create_team(
+        self,
+        team_alias: str,
+        team_id: str | None = None,
+        models: list[str] | None = None,
+        max_budget: float | None = None,
+        budget_duration: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a new team.
+
+        Args:
+            team_alias: Display name for the team.
+            team_id: Optional team ID (slug).
+            models: List of allowed model names.
+            max_budget: Maximum budget.
+            budget_duration: Budget period.
+            metadata: Additional metadata.
+
+        Returns:
+            Created team info.
+        """
+        data: dict[str, Any] = {"team_alias": team_alias}
+
+        if team_id:
+            data["team_id"] = team_id
+        if models:
+            data["models"] = models
+        if max_budget is not None:
+            data["max_budget"] = max_budget
+        if budget_duration:
+            data["budget_duration"] = budget_duration
+        if metadata:
+            data["metadata"] = metadata
+
+        return self._request("POST", "/team/new", json=data)
+
+    def update_team(
+        self,
+        team_id: str,
+        team_alias: str | None = None,
+        models: list[str] | None = None,
+        max_budget: float | None = None,
+        budget_duration: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Update an existing team.
+
+        Args:
+            team_id: Team ID to update.
+            team_alias: New display name.
+            models: New list of allowed models.
+            max_budget: New budget.
+            budget_duration: New budget period.
+            metadata: New metadata.
+
+        Returns:
+            Updated team info.
+        """
+        data: dict[str, Any] = {"team_id": team_id}
+
+        if team_alias is not None:
+            data["team_alias"] = team_alias
+        if models is not None:
+            data["models"] = models
+        if max_budget is not None:
+            data["max_budget"] = max_budget
+        if budget_duration is not None:
+            data["budget_duration"] = budget_duration
+        if metadata is not None:
+            data["metadata"] = metadata
+
+        return self._request("POST", "/team/update", json=data)
+
+    def delete_team(self, team_id: str) -> dict[str, Any]:
+        """Delete a team.
+
+        Args:
+            team_id: Team ID to delete.
+
+        Returns:
+            Response data.
+        """
+        return self._request("POST", "/team/delete", json={"team_ids": [team_id]})
+
+    # ==================== Health Check ====================
+
+    def health_check(self) -> bool:
+        """Check if proxy is reachable.
+
+        Returns:
+            True if healthy, False otherwise.
+        """
+        try:
+            self._request("GET", "/health")
+            return True
+        except Exception:
+            return False

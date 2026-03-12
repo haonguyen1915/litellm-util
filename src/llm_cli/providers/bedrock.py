@@ -1,0 +1,131 @@
+"""AWS Bedrock provider and models."""
+
+from llm_cli.providers.base import create_model, create_provider
+
+BEDROCK_MODELS = [
+    # Claude models on Bedrock
+    create_model(
+        id="bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
+        provider="bedrock",
+        context_window=200_000,
+        max_output=8_192,
+        input_price=3.00,
+        output_price=15.00,
+        capabilities=["vision", "tools", "streaming"],
+        training_cutoff="April 2024",
+    ),
+    create_model(
+        id="bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+        provider="bedrock",
+        context_window=200_000,
+        max_output=8_192,
+        input_price=1.00,
+        output_price=5.00,
+        capabilities=["vision", "tools", "streaming"],
+        training_cutoff="July 2024",
+    ),
+    create_model(
+        id="bedrock/anthropic.claude-3-opus-20240229-v1:0",
+        provider="bedrock",
+        context_window=200_000,
+        max_output=4_096,
+        input_price=15.00,
+        output_price=75.00,
+        capabilities=["vision", "tools", "streaming"],
+        training_cutoff="August 2023",
+    ),
+    create_model(
+        id="bedrock/anthropic.claude-3-sonnet-20240229-v1:0",
+        provider="bedrock",
+        context_window=200_000,
+        max_output=4_096,
+        input_price=3.00,
+        output_price=15.00,
+        capabilities=["vision", "tools", "streaming"],
+        training_cutoff="August 2023",
+    ),
+    create_model(
+        id="bedrock/anthropic.claude-3-haiku-20240307-v1:0",
+        provider="bedrock",
+        context_window=200_000,
+        max_output=4_096,
+        input_price=0.25,
+        output_price=1.25,
+        capabilities=["vision", "tools", "streaming"],
+        training_cutoff="August 2023",
+    ),
+    # Amazon models
+    create_model(
+        id="bedrock/amazon.titan-text-express-v1",
+        provider="bedrock",
+        context_window=8_000,
+        max_output=8_000,
+        input_price=0.20,
+        output_price=0.60,
+        capabilities=["streaming"],
+    ),
+    create_model(
+        id="bedrock/amazon.titan-text-lite-v1",
+        provider="bedrock",
+        context_window=4_000,
+        max_output=4_000,
+        input_price=0.15,
+        output_price=0.20,
+        capabilities=["streaming"],
+    ),
+    # Mistral models on Bedrock
+    create_model(
+        id="bedrock/mistral.mistral-large-2407-v1:0",
+        provider="bedrock",
+        context_window=128_000,
+        max_output=8_192,
+        input_price=4.00,
+        output_price=12.00,
+        capabilities=["tools", "streaming"],
+    ),
+    create_model(
+        id="bedrock/mistral.mistral-small-2402-v1:0",
+        provider="bedrock",
+        context_window=32_000,
+        max_output=8_192,
+        input_price=1.00,
+        output_price=3.00,
+        capabilities=["tools", "streaming"],
+    ),
+    # Llama models on Bedrock
+    create_model(
+        id="bedrock/meta.llama3-1-405b-instruct-v1:0",
+        provider="bedrock",
+        context_window=128_000,
+        max_output=4_096,
+        input_price=5.32,
+        output_price=16.00,
+        capabilities=["tools", "streaming"],
+    ),
+    create_model(
+        id="bedrock/meta.llama3-1-70b-instruct-v1:0",
+        provider="bedrock",
+        context_window=128_000,
+        max_output=4_096,
+        input_price=0.99,
+        output_price=0.99,
+        capabilities=["tools", "streaming"],
+    ),
+    create_model(
+        id="bedrock/meta.llama3-1-8b-instruct-v1:0",
+        provider="bedrock",
+        context_window=128_000,
+        max_output=4_096,
+        input_price=0.22,
+        output_price=0.22,
+        capabilities=["tools", "streaming"],
+    ),
+]
+
+BEDROCK_PROVIDER = create_provider(
+    id="bedrock",
+    name="AWS Bedrock",
+    description="AWS Bedrock (Claude, Llama, Titan)",
+    models=BEDROCK_MODELS,
+    env_var="AWS_ACCESS_KEY_ID",
+)

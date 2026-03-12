@@ -1,0 +1,232 @@
+"""Key commands - Manage virtual API keys."""
+
+from typing import Optional
+
+import typer
+
+from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
+from llm_cli.core.context import ConfigurationError
+from llm_cli.ui import confirm, error, select_from_list, select_multiple, success, text_input
+from llm_cli.ui.console import console, print_detail, warning
+from llm_cli.ui.tables import print_keys_table
+from llm_cli.utils.clipboard import copy_to_clipboard
+
+app = typer.Typer(no_args_is_help=True)
+
+
+def _get_client(org: str | None, env: str | None) -> LiteLLMClient:
+    """Get API client with error handling."""
+    try:
+        return LiteLLMClient(org_override=org, env_override=env)
+    except ConfigurationError as e:
+        error(str(e))
+        raise typer.Exit(2)
+
+
+@app.command("list")
+def list_keys(
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """List all virtual keys."""
+    client = _get_client(org, env)
+    context_name = f"{client.context.organization_id}/{client.context.environment}"
+
+    try:
+        keys = client.list_keys()
+        print_keys_table(keys, context_name)
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
+        console.print(f"  URL: {client.base_url}", style="dim")
+        raise typer.Exit(3)
+    except AuthenticationError:
+        error("Authentication failed")
+        raise typer.Exit(4)
+    except APIError as e:
+        error(f"API Error: {e.message}")
+        raise typer.Exit(1)
+
+
+@app.command("create")
+def create_key(
+    alias: Optional[str] = typer.Option(None, "--alias", "-a", help="Key alias/name"),
+    team: Optional[str] = typer.Option(None, "--team", "-t", help="Team ID to assign"),
+    budget: Optional[float] = typer.Option(None, "--budget", "-b", help="Monthly budget"),
+    models: Optional[str] = typer.Option(
+        None, "--models", "-m", help="Comma-separated list of allowed models"
+    ),
+    expires: Optional[str] = typer.Option(None, "--expires", help="Expiration date (YYYY-MM-DD)"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """Create a new virtual key."""
+    client = _get_client(org, env)
+
+    # If alias not provided, prompt for it
+    if not alias:
+        alias = text_input("Key alias:")
+
+    # Interactive team selection if not provided
+    team_id = team
+    if not team_id:
+        if confirm("Assign to team?", default=False):
+            try:
+                teams = client.list_teams()
+                if teams:
+                    team_choices = [f"{t.team_id} ({t.team_alias or '-'})" for t in teams]
+                    selection = select_from_list("Select team:", team_choices)
+                    if selection:
+                        for t in teams:
+                            if t.team_id in selection:
+                                team_id = t.team_id
+                                break
+            except Exception:
+                pass  # Continue without team
+
+    # Interactive budget
+    max_budget = budget
+    budget_duration = None
+    if max_budget is None:
+        if confirm("Set budget limit?", default=False):
+            budget_str = text_input("Monthly budget ($):")
+            if budget_str:
+                try:
+                    max_budget = float(budget_str)
+                    budget_duration = "monthly"
+                except ValueError:
+                    warning("Invalid budget value, skipping")
+
+    # Interactive model selection
+    model_list = None
+    if models:
+        model_list = [m.strip() for m in models.split(",")]
+    else:
+        if confirm("Restrict to specific models?", default=False):
+            try:
+                proxy_models = client.list_models()
+                if proxy_models:
+                    model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
+                    if model_names:
+                        selected = select_multiple("Select models:", model_names)
+                        if selected:
+                            model_list = selected
+            except Exception:
+                pass  # Continue without model restriction
+
+    # Interactive expiration
+    expires_date = expires
+    if not expires_date:
+        if confirm("Set expiration?", default=False):
+            expires_date = text_input("Expiration date (YYYY-MM-DD):")
+
+    # Create the key
+    try:
+        result = client.create_key(
+            key_alias=alias if alias else None,
+            team_id=team_id,
+            models=model_list,
+            max_budget=max_budget,
+            budget_duration=budget_duration,
+            expires=expires_date,
+        )
+
+        key = result.get("key", result.get("token", ""))
+
+        success("Virtual key created:")
+        if alias:
+            print_detail("Alias", alias)
+        print_detail("Key", key)
+        if team_id:
+            print_detail("Team", team_id)
+        if max_budget:
+            print_detail("Budget", f"${max_budget}/{budget_duration or 'month'}")
+        if model_list:
+            print_detail("Models", ", ".join(model_list))
+        if expires_date:
+            print_detail("Expires", expires_date)
+
+        console.print()
+        warning("Save this key! It won't be shown again.")
+
+        # Try to copy to clipboard
+        if copy_to_clipboard(key):
+            console.print("  (Copied to clipboard)", style="dim")
+
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
+        raise typer.Exit(3)
+    except AuthenticationError:
+        error("Authentication failed")
+        raise typer.Exit(4)
+    except APIError as e:
+        error(f"Failed to create key: {e.message}")
+        raise typer.Exit(1)
+
+
+@app.command("delete")
+def delete_key(
+    key_alias: Optional[str] = typer.Argument(None, help="Key alias to delete"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """Delete a virtual key."""
+    client = _get_client(org, env)
+
+    try:
+        keys = client.list_keys()
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
+        raise typer.Exit(3)
+    except AuthenticationError:
+        error("Authentication failed")
+        raise typer.Exit(4)
+    except APIError as e:
+        error(f"API Error: {e.message}")
+        raise typer.Exit(1)
+
+    if not keys:
+        error("No keys found")
+        raise typer.Exit(1)
+
+    # Select key if not provided
+    selected_key = None
+    if not key_alias:
+        key_choices = [
+            f"{k.key_alias or k.key_name or '-'} ({k.masked_key})" for k in keys
+        ]
+        selection = select_from_list("Select key to delete:", key_choices)
+        if selection is None:
+            raise typer.Exit(1)
+
+        for k in keys:
+            if k.masked_key in selection:
+                selected_key = k
+                break
+    else:
+        # Find key by alias
+        for k in keys:
+            if k.key_alias == key_alias or k.key_name == key_alias:
+                selected_key = k
+                break
+
+        if not selected_key:
+            error(f"Key '{key_alias}' not found")
+            raise typer.Exit(5)
+
+    if not selected_key:
+        error("Key not found")
+        raise typer.Exit(5)
+
+    # Confirm deletion
+    display_name = selected_key.key_alias or selected_key.key_name or selected_key.masked_key
+    if not yes:
+        if not confirm(f"Are you sure you want to delete '{display_name}'?"):
+            raise typer.Exit(1)
+
+    try:
+        client.delete_key(selected_key.token)
+        success(f"Key '{display_name}' deleted")
+    except APIError as e:
+        error(f"Failed to delete key: {e.message}")
+        raise typer.Exit(1)
