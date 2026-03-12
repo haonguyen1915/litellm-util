@@ -30,8 +30,59 @@ def print_providers_table(providers: list[ProviderInfo]) -> None:
     console.print("\nUse 'llm provider models <provider>' to see available models", style="dim")
 
 
-def print_models_table(models: list[ModelInfo], title: str = "Models") -> None:
-    """Print models in a pretty table."""
+def print_models_table(
+    models: list[ModelInfo],
+    title: str = "Models",
+    page_size: int = 0,
+) -> None:
+    """Print models in a pretty table with optional pagination.
+
+    Args:
+        models: List of models to display.
+        title: Table title.
+        page_size: Items per page (0 = no pagination, show all).
+    """
+    if page_size <= 0 or len(models) <= page_size:
+        # No pagination needed
+        _print_models_page(models, title, start_index=1)
+        console.print(f"\nPrices are per 1M tokens | Total: {len(models)} models", style="dim")
+        return
+
+    # Paginated output
+    total_pages = (len(models) + page_size - 1) // page_size
+    page = 0
+
+    while page < total_pages:
+        start = page * page_size
+        end = min(start + page_size, len(models))
+        page_models = models[start:end]
+
+        page_title = f"{title} (page {page + 1}/{total_pages})"
+        _print_models_page(page_models, page_title, start_index=start + 1)
+
+        console.print(
+            f"\nShowing {start + 1}-{end} of {len(models)} | Prices per 1M tokens",
+            style="dim",
+        )
+
+        # Prompt for next page
+        if page < total_pages - 1:
+            console.print(
+                "[dim]Press [bold]Enter[/bold] for next page, [bold]q[/bold] to quit[/dim]"
+            )
+            try:
+                user_input = input()
+                if user_input.strip().lower() == "q":
+                    break
+            except (EOFError, KeyboardInterrupt):
+                break
+        page += 1
+
+
+def _print_models_page(
+    models: list[ModelInfo], title: str, start_index: int = 1
+) -> None:
+    """Print a single page of models."""
     table = Table(
         title=title,
         show_header=True,
@@ -44,14 +95,13 @@ def print_models_table(models: list[ModelInfo], title: str = "Models") -> None:
     table.add_column("Max Output", style="cyan", justify="right")
     table.add_column("Input/Output $", style="green", justify="right")
 
-    for i, model in enumerate(models, 1):
+    for i, model in enumerate(models, start_index):
         context = format_tokens(model.context_window)
         max_output = format_tokens(model.max_output)
         price = f"${model.input_price} / ${model.output_price}"
         table.add_row(str(i), model.id, context, max_output, price)
 
     console.print(table)
-    console.print("\nPrices are per 1M tokens", style="dim")
 
 
 def print_model_details(model: ModelInfo) -> None:

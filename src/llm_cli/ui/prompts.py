@@ -142,6 +142,34 @@ def confirm(message: str, default: bool = False) -> bool:
     return result if result is not None else False
 
 
+def fuzzy_select(
+    message: str,
+    choices: list[str],
+) -> str | None:
+    """Select from list with fuzzy/autocomplete search.
+
+    User can type to filter choices. Useful for large lists.
+
+    Args:
+        message: Question to display.
+        choices: List of choices.
+
+    Returns:
+        Selected choice or None if cancelled.
+    """
+    if not choices:
+        return None
+
+    result = questionary.autocomplete(
+        message,
+        choices=choices,
+        style=custom_style,
+        match_middle=True,
+    ).ask()
+
+    return result
+
+
 def select_with_custom(
     message: str,
     choices: list[str],

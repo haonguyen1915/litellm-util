@@ -1,17 +1,27 @@
 """Provider commands - List providers and models supported by LiteLLM."""
 
+from enum import Enum
 from typing import Optional
 
 import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
-from llm_cli.ui import error, select_from_list, success, warning
+from llm_cli.models.provider import ModelInfo
+from llm_cli.ui import error, fuzzy_select, select_from_list, success, warning
 from llm_cli.ui.console import console
 from llm_cli.ui.tables import print_model_details, print_models_table, print_providers_table
 from llm_cli.utils.clipboard import copy_to_clipboard
 
 app = typer.Typer(no_args_is_help=True)
+
+DEFAULT_PAGE_SIZE = 20
+
+
+class SortField(str, Enum):
+    name = "name"
+    price = "price"
+    context = "context"
 
 
 def _get_client(org: str | None, env: str | None) -> LiteLLMClient:
@@ -23,8 +33,30 @@ def _get_client(org: str | None, env: str | None) -> LiteLLMClient:
         raise typer.Exit(2)
 
 
+def _filter_models(models: list[ModelInfo], search: str | None) -> list[ModelInfo]:
+    """Filter models by search keyword (case-insensitive contains)."""
+    if not search:
+        return models
+    keyword = search.lower()
+    return [m for m in models if keyword in m.id.lower()]
+
+
+def _sort_models(models: list[ModelInfo], sort: SortField) -> list[ModelInfo]:
+    """Sort models by field."""
+    if sort == SortField.name:
+        return sorted(models, key=lambda m: m.id)
+    elif sort == SortField.price:
+        return sorted(models, key=lambda m: m.input_price)
+    elif sort == SortField.context:
+        return sorted(models, key=lambda m: m.context_window, reverse=True)
+    return models
+
+
 @app.command("list")
 def list_providers(
+    search: Optional[str] = typer.Option(
+        None, "--search", "-s", help="Filter providers by keyword"
+    ),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
@@ -65,6 +97,14 @@ def list_providers(
         error(f"API Error: {e.message}")
         raise typer.Exit(1)
 
+    # Apply search filter
+    if search:
+        keyword = search.lower()
+        supported = [p for p in supported if keyword in p.id.lower() or keyword in p.name.lower()]
+        if not supported:
+            error(f"No providers matching '{search}'")
+            raise typer.Exit(1)
+
     if not supported:
         error("No providers found")
         raise typer.Exit(1)
@@ -77,11 +117,20 @@ def list_providers(
 @app.command("models")
 def list_models(
     provider_name: Optional[str] = typer.Argument(None, help="Provider name"),
-    no_interactive: bool = typer.Option(
-        False, "--no-interactive", "-n", help="Disable interactive mode"
+    search: Optional[str] = typer.Option(
+        None, "--search", "-s", help="Filter models by keyword (contains)"
+    ),
+    sort: SortField = typer.Option(
+        SortField.name, "--sort", help="Sort by: name, price, context"
     ),
     capability: Optional[str] = typer.Option(
         None, "--capability", "-c", help="Filter by capability (e.g., vision, tools)"
+    ),
+    page_size: int = typer.Option(
+        DEFAULT_PAGE_SIZE, "--page-size", "-p", help="Models per page (0 = no pagination)"
+    ),
+    no_interactive: bool = typer.Option(
+        False, "--no-interactive", "-n", help="Disable interactive mode"
     ),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
@@ -116,8 +165,10 @@ def list_models(
                 console.print(f"  - {pid}", style="dim")
             raise typer.Exit(5)
 
-        selection = select_from_list("Select provider:", provider_ids)
-        if selection is None:
+        # Use fuzzy search for provider selection (76+ providers)
+        console.print("[dim]Type to search providers (tab to complete):[/dim]")
+        selection = fuzzy_select("Provider:", provider_ids)
+        if selection is None or selection not in provider_ids:
             raise typer.Exit(1)
         provider_name = selection
 
@@ -130,16 +181,32 @@ def list_models(
             console.print(f"  - {pid}", style="dim")
         raise typer.Exit(5)
 
-    # Filter models by capability if specified
+    # Apply filters
     models = provider.models
+
     if capability:
         models = [m for m in models if capability.lower() in [c.lower() for c in m.capabilities]]
         if not models:
             error(f"No models found with capability '{capability}'")
             raise typer.Exit(1)
 
-    # Print models table
-    print_models_table(models, title=f"{provider.name} Models ({len(models)} supported)")
+    models = _filter_models(models, search)
+    if not models:
+        error(f"No models matching '{search}'")
+        raise typer.Exit(1)
+
+    models = _sort_models(models, sort)
+
+    # Build title
+    title = f"{provider.name} Models ({len(models)} models)"
+    if search:
+        title += f" [search: {search}]"
+
+    # Determine effective page size
+    effective_page_size = page_size if not no_interactive else 0
+
+    # Print models table (paginated if interactive)
+    print_models_table(models, title=title, page_size=effective_page_size)
 
     # Non-interactive mode: just print and exit
     if no_interactive:
@@ -147,15 +214,18 @@ def list_models(
 
     # Interactive mode: allow model selection for details
     model_ids = [m.id for m in models]
-    model_ids.append("Back / Quit")
 
-    selection = select_from_list(
-        "Select model for details:",
-        model_ids,
-    )
-
-    if selection is None or selection == "Back / Quit":
-        return
+    if len(model_ids) > 20:
+        # Use fuzzy search for large model lists
+        console.print("\n[dim]Type to search models (tab to complete):[/dim]")
+        selection = fuzzy_select("Model:", model_ids)
+        if selection is None or selection not in model_ids:
+            return
+    else:
+        model_ids.append("Back / Quit")
+        selection = select_from_list("Select model for details:", model_ids)
+        if selection is None or selection == "Back / Quit":
+            return
 
     # Find selected model
     selected_model = next((m for m in models if m.id == selection), None)
