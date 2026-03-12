@@ -15,8 +15,6 @@ from llm_cli.utils.clipboard import copy_to_clipboard
 
 app = typer.Typer(no_args_is_help=True)
 
-DEFAULT_PAGE_SIZE = 20
-
 
 class SortField(str, Enum):
     name = "name"
@@ -126,9 +124,6 @@ def list_models(
     capability: Optional[str] = typer.Option(
         None, "--capability", "-c", help="Filter by capability (e.g., vision, tools)"
     ),
-    page_size: int = typer.Option(
-        DEFAULT_PAGE_SIZE, "--page-size", "-p", help="Models per page (0 = no pagination)"
-    ),
     no_interactive: bool = typer.Option(
         False, "--no-interactive", "-n", help="Disable interactive mode"
     ),
@@ -202,30 +197,19 @@ def list_models(
     if search:
         title += f" [search: {search}]"
 
-    # Determine effective page size
-    effective_page_size = page_size if not no_interactive else 0
-
-    # Print models table (paginated if interactive)
-    print_models_table(models, title=title, page_size=effective_page_size)
+    # Print full models table
+    print_models_table(models, title=title)
 
     # Non-interactive mode: just print and exit
     if no_interactive:
         return
 
-    # Interactive mode: allow model selection for details
+    # Interactive: type to select a model
     model_ids = [m.id for m in models]
-
-    if len(model_ids) > 20:
-        # Use fuzzy search for large model lists
-        console.print("\n[dim]Type to search models (tab to complete):[/dim]")
-        selection = fuzzy_select("Model:", model_ids)
-        if selection is None or selection not in model_ids:
-            return
-    else:
-        model_ids.append("Back / Quit")
-        selection = select_from_list("Select model for details:", model_ids)
-        if selection is None or selection == "Back / Quit":
-            return
+    console.print("\n[dim]Type to search models (tab to complete, enter to select):[/dim]")
+    selection = fuzzy_select("Model:", model_ids)
+    if selection is None or selection not in model_ids:
+        return
 
     # Find selected model
     selected_model = next((m for m in models if m.id == selection), None)
