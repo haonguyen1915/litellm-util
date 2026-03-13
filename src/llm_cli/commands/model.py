@@ -6,7 +6,7 @@ import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
-from llm_cli.ui import confirm, error, fuzzy_select, success, text_input
+from llm_cli.ui import confirm, error, fuzzy_select, success, text_input, warning
 from llm_cli.ui.console import console, print_detail
 from llm_cli.ui.tables import print_models_table, print_proxy_models_table
 
@@ -150,7 +150,7 @@ def create_model_interactive(
         if not alias:
             alias = default_alias
 
-    # Get API key
+    # Get API key with retry loop for test validation
     if prefill_api_key:
         api_key = prefill_api_key
     elif provider.requires_api_key:
@@ -159,10 +159,56 @@ def create_model_interactive(
     else:
         api_key = None
 
-    # Build litellm_params
-    litellm_params = {"model": full_model_id}
-    if api_key:
-        litellm_params["api_key"] = api_key
+    # Test and create with retry loop
+    max_retries = 3
+    for attempt in range(max_retries):
+        litellm_params = {"model": full_model_id}
+        if api_key:
+            litellm_params["api_key"] = api_key
+
+        # Test model before creating
+        console.print("\n[dim]Testing model connection...[/dim]")
+        with console.status("[bold cyan]Sending test request..."):
+            test_ok, test_message = client.test_model_completion(alias, litellm_params)
+
+        if test_ok:
+            success(f"Test passed: {test_message}")
+            console.print()
+            break
+        else:
+            error(f"Test failed: {test_message}")
+
+            if attempt < max_retries - 1:
+                console.print()
+                retry_choices = [
+                    "Re-enter API key",
+                    "Re-enter model ID",
+                    "Skip test and create anyway",
+                    "Cancel",
+                ]
+                from llm_cli.ui import select_from_list
+                retry_action = select_from_list("What would you like to do?", retry_choices)
+
+                if retry_action is None or "Cancel" in retry_action:
+                    raise typer.Exit(1)
+                elif "Re-enter API key" in retry_action:
+                    api_key = text_input("API Key:", password=True)
+                    continue
+                elif "Re-enter model ID" in retry_action:
+                    new_model = text_input("Model ID:", default=full_model_id)
+                    if new_model:
+                        full_model_id = new_model
+                    continue
+                elif "Skip test" in retry_action:
+                    warning("Skipping test - model may not work correctly")
+                    console.print()
+                    break
+            else:
+                # Last attempt failed
+                if not confirm("All test attempts failed. Create model anyway?", default=False):
+                    raise typer.Exit(1)
+                warning("Creating model without successful test")
+                console.print()
 
     # Create model
     try:
@@ -198,6 +244,15 @@ def _create_model_non_interactive(
     litellm_params = {"model": model_id}
     if api_key:
         litellm_params["api_key"] = api_key
+
+    # Test model before creating
+    console.print("[dim]Testing model connection...[/dim]")
+    test_ok, test_message = client.test_model_completion(alias, litellm_params)
+    if test_ok:
+        success(f"Test passed: {test_message}")
+    else:
+        error(f"Test failed: {test_message}")
+        raise typer.Exit(6)
 
     try:
         client.create_model(

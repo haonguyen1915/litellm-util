@@ -109,18 +109,20 @@ def text_input(
         User input or None if cancelled.
     """
     if password:
-        return questionary.password(
+        result = questionary.password(
             message,
             style=custom_style,
             validate=validate,
         ).ask()
+        return result.strip() if result else result
 
-    return questionary.text(
+    result = questionary.text(
         message,
         default=default,
         style=custom_style,
         validate=validate,
     ).ask()
+    return result.strip() if result else result
 
 
 def confirm(message: str, default: bool = False) -> bool:

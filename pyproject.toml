@@ -34,6 +34,9 @@ pyyaml = "^6.0.1"
 # Clipboard
 pyperclip = "^1.8.2"
 
+# LiteLLM SDK (for model testing)
+litellm = ">=1.40.0"
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
 pytest-cov = "^4.1.0"

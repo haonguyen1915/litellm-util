@@ -333,9 +333,14 @@ class LiteLLMClient:
         Returns:
             Created model info.
         """
+        # Sanitize string values in litellm_params
+        clean_params = {}
+        for k, v in litellm_params.items():
+            clean_params[k] = v.strip() if isinstance(v, str) else v
+
         data = {
             "model_name": model_name,
-            "litellm_params": litellm_params,
+            "litellm_params": clean_params,
         }
         if model_info:
             data["model_info"] = model_info
@@ -535,6 +540,62 @@ class LiteLLMClient:
             Response data.
         """
         return self._request("POST", "/team/delete", json={"team_ids": [team_id]})
+
+    # ==================== Model Testing ====================
+
+    @staticmethod
+    def test_model_completion(
+        model_name: str,
+        litellm_params: dict[str, Any],
+    ) -> tuple[bool, str]:
+        """Test a model by calling the provider API directly via litellm SDK.
+
+        Sends a minimal completion request directly to the provider
+        (bypasses the proxy) to verify credentials and model access.
+
+        Args:
+            model_name: Display name (unused, kept for interface compatibility).
+            litellm_params: LiteLLM parameters (model, api_key, etc.).
+
+        Returns:
+            Tuple of (success, message).
+        """
+        import litellm
+
+        # Sanitize params - strip whitespace from string values
+        clean_params = {}
+        for k, v in litellm_params.items():
+            clean_params[k] = v.strip() if isinstance(v, str) else v
+
+        model = clean_params.pop("model")
+        try:
+            litellm.completion(
+                model=model,
+                messages=[{"role": "user", "content": "hi"}],
+                max_tokens=5,
+                **clean_params,
+            )
+            return True, "Model responded successfully"
+        except litellm.AuthenticationError:
+            return False, "Authentication failed - check your API key"
+        except litellm.NotFoundError:
+            return False, f"Model '{model}' not found - check provider/model ID"
+        except litellm.RateLimitError:
+            # Rate limited means credentials work, model is accessible
+            return True, "Model is accessible (rate limited on test request)"
+        except litellm.BadRequestError as e:
+            return False, f"Bad request: {e}"
+        except litellm.APIConnectionError as e:
+            return False, f"Cannot connect to provider API: {e}"
+        except litellm.Timeout:
+            return False, "Request timed out - provider may be slow or unreachable"
+        except Exception as e:
+            # Extract meaningful message from litellm exceptions
+            msg = str(e)
+            # Truncate very long error messages
+            if len(msg) > 200:
+                msg = msg[:200] + "..."
+            return False, msg
 
     # ==================== Health Check ====================
 
