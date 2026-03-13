@@ -238,21 +238,51 @@ def _create_model_non_interactive(
     org: str | None,
     env: str | None,
 ) -> None:
-    """Non-interactive model creation."""
+    """Non-interactive model creation with retry for missing/bad API key."""
+    from llm_cli.ui import select_from_list, text_input
+
     client = _get_client(org, env)
 
     litellm_params = {"model": model_id}
     if api_key:
         litellm_params["api_key"] = api_key
-
-    # Test model before creating
-    console.print("[dim]Testing model connection...[/dim]")
-    test_ok, test_message = client.test_model_completion(alias, litellm_params)
-    if test_ok:
-        success(f"Test passed: {test_message}")
     else:
-        error(f"Test failed: {test_message}")
-        raise typer.Exit(6)
+        key = text_input("API key:", password=True)
+        if key:
+            litellm_params["api_key"] = key
+
+    # Test model with retry loop
+    max_retries = 3
+    for attempt in range(max_retries):
+        console.print("[dim]Testing model connection...[/dim]")
+        with console.status("[bold cyan]Sending test request..."):
+            test_ok, test_message = client.test_model_completion(alias, litellm_params)
+
+        if test_ok:
+            success(f"Test passed: {test_message}")
+            break
+        else:
+            error(f"Test failed: {test_message}")
+            if attempt < max_retries - 1:
+                retry_choices = [
+                    "Enter API key",
+                    "Skip test and create anyway",
+                    "Cancel",
+                ]
+                retry_action = select_from_list("What would you like to do?", retry_choices)
+
+                if retry_action and "API key" in retry_action:
+                    new_key = text_input("API key:", password=True)
+                    if new_key:
+                        litellm_params["api_key"] = new_key
+                elif retry_action and "Skip" in retry_action:
+                    warning("Skipping test, creating model anyway")
+                    break
+                else:
+                    raise typer.Exit(6)
+            else:
+                error("Max retries reached")
+                raise typer.Exit(6)
 
     try:
         client.create_model(
