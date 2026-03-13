@@ -487,12 +487,16 @@ class LiteLLMClient:
 
         if team_id:
             data["team_id"] = team_id
+        # Models: specific list or "no-default-models" sentinel
         if models:
             data["models"] = models
+        else:
+            data["models"] = ["no-default-models"]
         if max_budget is not None:
             data["max_budget"] = max_budget
         if budget_duration:
-            data["budget_duration"] = budget_duration
+            duration_map = {"monthly": "30d", "daily": "1d", "weekly": "7d"}
+            data["budget_duration"] = duration_map.get(budget_duration, budget_duration)
         if metadata:
             data["metadata"] = metadata
 
@@ -529,7 +533,8 @@ class LiteLLMClient:
         if max_budget is not None:
             data["max_budget"] = max_budget
         if budget_duration is not None:
-            data["budget_duration"] = budget_duration
+            duration_map = {"monthly": "30d", "daily": "1d", "weekly": "7d"}
+            data["budget_duration"] = duration_map.get(budget_duration, budget_duration)
         if metadata is not None:
             data["metadata"] = metadata
 

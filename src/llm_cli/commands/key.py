@@ -136,9 +136,21 @@ def create_key(
 
                         pick = fuzzy_select("Model access:", remaining)
 
-                        if not pick or pick not in remaining:
+                        if not pick:
                             break
-                        selected_models.append(pick)
+
+                        # Exact match
+                        if pick in remaining:
+                            selected_models.append(pick)
+                            continue
+
+                        # Partial match (typed text + Enter without Tab)
+                        matches = [m for m in remaining if pick.lower() in m.lower()]
+                        if len(matches) == 1:
+                            selected_models.append(matches[0])
+                            continue
+
+                        break
 
                     if selected_models:
                         model_list = selected_models
@@ -249,7 +261,7 @@ def delete_key(
     else:
         # Find key by alias
         for k in keys:
-            if k.key_alias == key_alias or k.key_name == key_alias:
+            if (k.key_alias and k.key_alias.lower() == key_alias.lower()) or (k.key_name and k.key_name.lower() == key_alias.lower()):
                 selected_key = k
                 break
 
