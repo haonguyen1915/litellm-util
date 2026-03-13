@@ -231,6 +231,37 @@ def print_teams_table(teams: list[Team], context_name: str = "") -> None:
     console.print(f"\nTotal: {len(teams)} teams", style="dim")
 
 
+def print_team_details(team: "Team") -> None:
+    """Print detailed information about a single team."""
+    table = Table(
+        title="Team Details",
+        show_header=False,
+        box=None,
+    )
+
+    table.add_column("Property", style="cyan", width=20)
+    table.add_column("Value", style="white")
+
+    table.add_row("Team ID", team.team_id)
+    table.add_row("Name", team.team_alias or "-")
+
+    if team.models:
+        table.add_row("Models", ", ".join(team.models))
+    else:
+        table.add_row("Models", "All models")
+
+    if team.max_budget:
+        duration = team.budget_duration or "month"
+        table.add_row("Budget", f"${team.max_budget:.0f}/{duration}")
+    else:
+        table.add_row("Budget", "Unlimited")
+
+    table.add_row("Blocked", "Yes" if team.blocked else "No")
+    table.add_row("Members", str(len(team.members)))
+
+    console.print(table)
+
+
 def print_config_table(orgs: dict) -> None:
     """Print configuration table with all orgs and environments."""
     table = Table(

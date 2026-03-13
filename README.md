@@ -228,6 +228,12 @@ Manage teams and their permissions/budgets.
 # List all teams
 llm team list
 
+# Get team details (interactive selection)
+llm team get
+
+# Get team details (direct)
+llm team get <team-id>
+
 # Create team (interactive)
 llm team create
 
@@ -396,7 +402,7 @@ src/llm_cli/
     provider.py        # llm provider [list|models]
     model.py           # llm model [list|create|delete]
     key.py             # llm key [list|create|delete]
-    team.py            # llm team [list|create|delete|update]
+    team.py            # llm team [list|get|create|delete|update]
     admin.py           # llm admin [rotate-key]
     history.py         # llm history
   core/

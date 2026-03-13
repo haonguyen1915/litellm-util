@@ -8,7 +8,7 @@ from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, 
 from llm_cli.core.context import ConfigurationError
 from llm_cli.ui import confirm, error, fuzzy_select, select_from_list, success, text_input
 from llm_cli.ui.console import console, print_detail, warning
-from llm_cli.ui.tables import print_proxy_models_table, print_teams_table
+from llm_cli.ui.tables import print_proxy_models_table, print_team_details, print_teams_table
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -34,6 +34,63 @@ def list_teams(
     try:
         teams = client.list_teams()
         print_teams_table(teams, context_name)
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
+        console.print(f"  URL: {client.base_url}", style="dim")
+        raise typer.Exit(3)
+    except AuthenticationError:
+        error("Authentication failed")
+        raise typer.Exit(4)
+    except APIError as e:
+        error(f"API Error: {e.message}")
+        raise typer.Exit(1)
+
+
+@app.command("get")
+def get_team(
+    team_id: Optional[str] = typer.Argument(None, help="Team ID to retrieve"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """Get details of a specific team."""
+    client = _get_client(org, env)
+
+    # If no team_id provided, list teams and let user pick
+    if not team_id:
+        try:
+            teams = client.list_teams()
+        except ConnectionError:
+            error("Cannot connect to LiteLLM Proxy")
+            console.print(f"  URL: {client.base_url}", style="dim")
+            raise typer.Exit(3)
+        except AuthenticationError:
+            error("Authentication failed")
+            raise typer.Exit(4)
+        except APIError as e:
+            error(f"API Error: {e.message}")
+            raise typer.Exit(1)
+
+        if not teams:
+            error("No teams found")
+            raise typer.Exit(1)
+
+        context_name = f"{client.context.organization_id}/{client.context.environment}"
+        print_teams_table(teams, context_name)
+
+        team_map = {
+            f"{t.team_alias or t.team_id} ({t.team_id})": t.team_id
+            for t in teams
+        }
+        console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
+        selection = fuzzy_select("Select team:", list(team_map.keys()))
+        if selection is None or selection not in team_map:
+            raise typer.Exit(1)
+
+        team_id = team_map[selection]
+
+    try:
+        team = client.get_team(team_id)
+        print_team_details(team)
     except ConnectionError:
         error("Cannot connect to LiteLLM Proxy")
         console.print(f"  URL: {client.base_url}", style="dim")

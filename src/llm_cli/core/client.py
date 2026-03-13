@@ -461,6 +461,18 @@ class LiteLLMClient:
 
         return teams
 
+    def get_team(self, team_id: str) -> Team:
+        """Get a single team by ID.
+
+        Args:
+            team_id: Team ID to retrieve.
+
+        Returns:
+            Team object.
+        """
+        response = self._request("GET", "/team/info", params={"team_id": team_id})
+        return Team.model_validate(response.get("team_info", response))
+
     def create_team(
         self,
         team_alias: str,
