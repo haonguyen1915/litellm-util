@@ -3,7 +3,7 @@ name = "litellm-util"
 version = "0.1.0"
 description = "CLI tool for managing LiteLLM Proxy Server"
 authors = ["Hao Nguyen <hao.nguyen@example.com>"]
-license = "MIT"
+license = "GPL-3.0-or-later"
 packages = [{include = "llm_cli", from = "src"}]
 
 [tool.poetry.scripts]

@@ -7,13 +7,27 @@ CLI tool for managing [LiteLLM Proxy Server](https://docs.litellm.ai/) - models,
 Requires Python 3.10+.
 
 ```bash
-# Clone & install
+pip install litellm-util
+```
+
+Or with [pipx](https://pipx.pypa.io/) (recommended for CLI tools):
+
+```bash
+pipx install litellm-util
+```
+
+Verify:
+
+```bash
+llm --help
+```
+
+### From source
+
+```bash
 git clone <repo-url>
 cd litellm-util
 poetry install
-
-# Verify
-llm --help
 ```
 
 ## Quick Start
@@ -403,4 +417,4 @@ src/llm_cli/
 
 ## License
 
-MIT
+GPL-3.0-or-later
