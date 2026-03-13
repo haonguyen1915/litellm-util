@@ -6,10 +6,9 @@ import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
-from llm_cli.providers import get_all_providers, get_provider, get_provider_ids
-from llm_cli.ui import confirm, error, select_from_list, success, text_input
+from llm_cli.ui import confirm, error, fuzzy_select, success, text_input
 from llm_cli.ui.console import console, print_detail
-from llm_cli.ui.tables import print_proxy_models_table
+from llm_cli.ui.tables import print_models_table, print_proxy_models_table
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -35,8 +34,8 @@ def list_models(
     try:
         models = client.list_models()
         print_proxy_models_table(models, context_name)
-    except ConnectionError as e:
-        error(f"Cannot connect to LiteLLM Proxy")
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
         console.print(f"  URL: {client.base_url}", style="dim")
         console.print("\n  Please check:", style="dim")
         console.print("  - Is the proxy server running?", style="dim")
@@ -88,43 +87,64 @@ def create_model_interactive(
     """Interactive model creation flow."""
     client = _get_client(org_override, env_override)
 
+    # Fetch all supported models from LiteLLM
+    try:
+        all_providers = client.list_supported_models()
+    except Exception:
+        all_providers = []
+
+    provider_ids = [p.id for p in all_providers]
+
     # Select provider
     if prefill_provider:
-        provider = get_provider(prefill_provider)
+        provider = next((p for p in all_providers if p.id == prefill_provider), None)
         if not provider:
             error(f"Provider '{prefill_provider}' not found")
             raise typer.Exit(5)
     else:
-        provider_ids = get_provider_ids()
-        selection = select_from_list("Select provider:", provider_ids)
-        if selection is None:
+        if not provider_ids:
+            error("Could not fetch provider list")
             raise typer.Exit(1)
-        provider = get_provider(selection)
+
+        console.print("[dim]Type to search providers (tab to complete):[/dim]")
+        selection = fuzzy_select("Provider:", provider_ids)
+        if selection is None or selection not in provider_ids:
+            raise typer.Exit(1)
+        provider = next((p for p in all_providers if p.id == selection), None)
         if not provider:
             raise typer.Exit(1)
 
-    # Select model
+    # Select model - show table then fuzzy select
     if prefill_model:
         model_id = prefill_model
     else:
         model_ids = [m.id for m in provider.models]
         if not model_ids:
-            # Custom model input for providers without predefined models
             model_id = text_input("Enter model ID:")
             if not model_id:
                 error("Model ID is required")
                 raise typer.Exit(5)
         else:
-            model_selection = select_from_list("Select model:", model_ids)
-            if model_selection is None:
+            # Show available models table
+            print_models_table(provider.models, title=f"{provider.name} - Available Models")
+
+            # Fuzzy select
+            console.print("\n[dim]Type to search models (tab to complete):[/dim]")
+            model_selection = fuzzy_select("Model:", model_ids)
+            if model_selection is None or model_selection not in model_ids:
                 raise typer.Exit(1)
             model_id = model_selection
+
+    # Build the full model string with provider prefix
+    if "/" not in model_id:
+        full_model_id = f"{provider.id}/{model_id}"
+    else:
+        full_model_id = model_id
 
     # Get alias
     if prefill_alias:
         alias = prefill_alias
     else:
-        # Suggest a default alias based on model ID
         default_alias = model_id.split("/")[-1].split(":")[0]
         alias = text_input("Model alias (display name):", default=default_alias)
         if not alias:
@@ -140,21 +160,21 @@ def create_model_interactive(
         api_key = None
 
     # Build litellm_params
-    litellm_params = {"model": model_id}
+    litellm_params = {"model": full_model_id}
     if api_key:
         litellm_params["api_key"] = api_key
 
     # Create model
     try:
-        result = client.create_model(
+        client.create_model(
             model_name=alias,
             litellm_params=litellm_params,
         )
         success(f"Model '{alias}' created successfully")
         print_detail("Provider", provider.id)
-        print_detail("Model", model_id)
-    except ConnectionError as e:
-        error(f"Cannot connect to LiteLLM Proxy: {e}")
+        print_detail("Model", full_model_id)
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
         raise typer.Exit(3)
     except AuthenticationError:
         error("Authentication failed")
@@ -174,11 +194,6 @@ def _create_model_non_interactive(
 ) -> None:
     """Non-interactive model creation."""
     client = _get_client(org, env)
-
-    provider = get_provider(provider_name)
-    if not provider:
-        error(f"Provider '{provider_name}' not found")
-        raise typer.Exit(5)
 
     litellm_params = {"model": model_id}
     if api_key:
@@ -229,31 +244,28 @@ def delete_model(
 
     # Select model if not provided
     if not model_name:
-        model_choices = [
-            f"{m.get('model_name', '')} ({m.get('litellm_params', {}).get('model', '')})"
-            for m in models
-        ]
-        selection = select_from_list("Select model to delete:", model_choices)
-        if selection is None:
+        # Show deployed models table first
+        context_name = f"{client.context.organization_id}/{client.context.environment}"
+        print_proxy_models_table(models, context_name)
+
+        # Fuzzy select to pick one
+        model_choices = [m.get("model_name", "") for m in models if m.get("model_name")]
+        console.print("\n[dim]Type to search models (tab to complete):[/dim]")
+        selection = fuzzy_select("Delete model:", model_choices)
+        if selection is None or selection not in model_choices:
             raise typer.Exit(1)
+        model_name = selection
 
-        # Find the model
-        for m in models:
-            if m.get("model_name", "") in selection:
-                model_name = m.get("model_name")
-                model_id = m.get("model_info", {}).get("id")
-                break
-    else:
-        # Find model by name
-        model_id = None
-        for m in models:
-            if m.get("model_name") == model_name:
-                model_id = m.get("model_info", {}).get("id")
-                break
+    # Find model by name
+    model_id = None
+    for m in models:
+        if m.get("model_name") == model_name:
+            model_id = m.get("model_info", {}).get("id")
+            break
 
-        if not model_id:
-            error(f"Model '{model_name}' not found")
-            raise typer.Exit(5)
+    if not model_id:
+        error(f"Model '{model_name}' not found")
+        raise typer.Exit(5)
 
     # Confirm deletion
     if not yes:

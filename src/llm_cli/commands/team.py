@@ -6,9 +6,9 @@ import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
-from llm_cli.ui import confirm, error, select_from_list, select_multiple, success, text_input
+from llm_cli.ui import confirm, error, fuzzy_select, select_from_list, select_multiple, success, text_input
 from llm_cli.ui.console import console, print_detail, warning
-from llm_cli.ui.tables import print_teams_table
+from llm_cli.ui.tables import print_proxy_models_table, print_teams_table
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -85,7 +85,11 @@ def create_team(
             if proxy_models:
                 model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
                 if model_names:
-                    console.print("\nSelect models for team:")
+                    # Show deployed models table
+                    context_name = f"{client.context.organization_id}/{client.context.environment}"
+                    print_proxy_models_table(proxy_models, context_name)
+
+                    console.print("\nSelect models for team (or skip for all models):")
                     model_names_with_all = ["All models"] + model_names
                     selected = select_multiple("Choose models:", model_names_with_all)
                     if selected and "All models" not in selected:
@@ -176,13 +180,19 @@ def update_team(
     # Select team if not provided
     selected_team = None
     if not team_id:
-        team_choices = [f"{t.team_id} ({t.team_alias or '-'})" for t in teams]
-        selection = select_from_list("Select team to update:", team_choices)
-        if selection is None:
+        # Show teams table first
+        context_name = f"{client.context.organization_id}/{client.context.environment}"
+        print_teams_table(teams, context_name)
+
+        # Fuzzy select team
+        team_choices = [t.team_id for t in teams]
+        console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
+        selection = fuzzy_select("Update team:", team_choices)
+        if selection is None or selection not in team_choices:
             raise typer.Exit(1)
 
         for t in teams:
-            if t.team_id in selection:
+            if t.team_id == selection:
                 selected_team = t
                 team_id = t.team_id
                 break
@@ -231,6 +241,14 @@ def update_team(
                     if m.get("model_name") and m.get("model_name") not in current_models
                 ]
                 if available:
+                    # Show available models table
+                    available_proxy = [
+                        m for m in proxy_models
+                        if m.get("model_name") and m.get("model_name") not in current_models
+                    ]
+                    if available_proxy:
+                        print_proxy_models_table(available_proxy, "Available to add")
+
                     selected = select_multiple("Select models to add:", available)
                     if selected:
                         add_models = ",".join(selected)
@@ -322,13 +340,19 @@ def delete_team(
     # Select team if not provided
     selected_team = None
     if not team_id:
-        team_choices = [f"{t.team_id} ({t.team_alias or '-'})" for t in teams]
-        selection = select_from_list("Select team to delete:", team_choices)
-        if selection is None:
+        # Show teams table first
+        context_name = f"{client.context.organization_id}/{client.context.environment}"
+        print_teams_table(teams, context_name)
+
+        # Fuzzy select team
+        team_choices = [t.team_id for t in teams]
+        console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
+        selection = fuzzy_select("Delete team:", team_choices)
+        if selection is None or selection not in team_choices:
             raise typer.Exit(1)
 
         for t in teams:
-            if t.team_id in selection:
+            if t.team_id == selection:
                 selected_team = t
                 team_id = t.team_id
                 break

@@ -6,9 +6,9 @@ import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
-from llm_cli.ui import confirm, error, select_from_list, select_multiple, success, text_input
+from llm_cli.ui import confirm, error, fuzzy_select, select_multiple, success, text_input
 from llm_cli.ui.console import console, print_detail, warning
-from llm_cli.ui.tables import print_keys_table
+from llm_cli.ui.tables import print_keys_table, print_proxy_models_table, print_teams_table
 from llm_cli.utils.clipboard import copy_to_clipboard
 
 app = typer.Typer(no_args_is_help=True)
@@ -73,13 +73,16 @@ def create_key(
             try:
                 teams = client.list_teams()
                 if teams:
-                    team_choices = [f"{t.team_id} ({t.team_alias or '-'})" for t in teams]
-                    selection = select_from_list("Select team:", team_choices)
-                    if selection:
-                        for t in teams:
-                            if t.team_id in selection:
-                                team_id = t.team_id
-                                break
+                    # Show teams table first
+                    context_name = f"{client.context.organization_id}/{client.context.environment}"
+                    print_teams_table(teams, context_name)
+
+                    # Fuzzy select team
+                    team_choices = [t.team_id for t in teams]
+                    console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
+                    selection = fuzzy_select("Team:", team_choices)
+                    if selection and selection in team_choices:
+                        team_id = selection
             except Exception:
                 pass  # Continue without team
 
@@ -107,6 +110,11 @@ def create_key(
                 if proxy_models:
                     model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
                     if model_names:
+                        # Show deployed models table
+                        context_name = f"{client.context.organization_id}/{client.context.environment}"
+                        print_proxy_models_table(proxy_models, context_name)
+
+                        # Multi-select models
                         selected = select_multiple("Select models:", model_names)
                         if selected:
                             model_list = selected
@@ -192,11 +200,17 @@ def delete_key(
     # Select key if not provided
     selected_key = None
     if not key_alias:
+        # Show keys table first
+        context_name = f"{client.context.organization_id}/{client.context.environment}"
+        print_keys_table(keys, context_name)
+
+        # Fuzzy select key
         key_choices = [
             f"{k.key_alias or k.key_name or '-'} ({k.masked_key})" for k in keys
         ]
-        selection = select_from_list("Select key to delete:", key_choices)
-        if selection is None:
+        console.print("\n[dim]Type to search keys (tab to complete):[/dim]")
+        selection = fuzzy_select("Delete key:", key_choices)
+        if selection is None or selection not in key_choices:
             raise typer.Exit(1)
 
         for k in keys:
