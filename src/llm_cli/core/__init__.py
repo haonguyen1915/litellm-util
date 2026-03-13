@@ -11,6 +11,11 @@ from llm_cli.core.context import (
     get_current_context,
     set_current_context,
 )
+from llm_cli.core.history import (
+    clear_history,
+    load_history,
+    record_command,
+)
 
 __all__ = [
     "CONFIG_DIR",
@@ -20,4 +25,7 @@ __all__ = [
     "CurrentContext",
     "get_current_context",
     "set_current_context",
+    "clear_history",
+    "load_history",
+    "record_command",
 ]

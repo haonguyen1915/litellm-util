@@ -265,6 +265,39 @@ The `rotate-key` command:
 
 ---
 
+### `llm history`
+
+View CLI command history. Every invocation is recorded (deduplicated by command string, keeping the latest timestamp).
+
+```bash
+# Show recent commands (default: 50)
+llm history
+
+# Limit entries
+llm history -n 10
+
+# Clear all history
+llm history --clear
+```
+
+Output:
+
+```
+                    Command History
+┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+┃ #  ┃ Command                            ┃ Last Run            ┃
+┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+│ 1  │ llm model list                     │ 2025-01-13 14:30:02 │
+│ 2  │ llm key create --alias my-key      │ 2025-01-13 14:25:11 │
+│ 3  │ llm config use my-org prod         │ 2025-01-13 13:10:45 │
+│ 4  │ llm team list                      │ 2025-01-12 09:22:30 │
+└────┴──────────────────────────────────────┴─────────────────────┘
+```
+
+History file location: `~/.litellm/history.jsonl`
+
+---
+
 ## Multi-Environment Workflow
 
 The CLI supports managing multiple organizations, each with multiple environments (dev, staging, prod).
@@ -351,10 +384,12 @@ src/llm_cli/
     key.py             # llm key [list|create|delete]
     team.py            # llm team [list|create|delete|update]
     admin.py           # llm admin [rotate-key]
+    history.py         # llm history
   core/
     config.py          # Config load/save (~/.litellm/)
     client.py          # LiteLLM Proxy HTTP client
     context.py         # Current org/env context
+    history.py         # Command history tracking (~/.litellm/history.jsonl)
   models/              # Pydantic schemas
   providers/           # Static provider/model definitions
   ui/

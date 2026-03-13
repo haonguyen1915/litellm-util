@@ -261,6 +261,17 @@ def print_config_table(orgs: dict) -> None:
     console.print(table)
 
 
+def print_history_table(entries: list[dict]) -> None:
+    """Print command history as a simple list.
+
+    Args:
+        entries: List of dicts with 'command' and 'timestamp' keys.
+    """
+    for i, entry in enumerate(entries, 1):
+        ts = entry["timestamp"].replace("T", " ")
+        console.print(f"[dim]{i:>3}[/dim]  {entry['command']}  [dim]{ts}[/dim]")
+
+
 def format_tokens(tokens: int) -> str:
     """Format token count to human readable string."""
     if tokens >= 1_000_000:
