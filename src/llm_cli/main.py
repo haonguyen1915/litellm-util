@@ -2,7 +2,7 @@
 
 import typer
 
-from llm_cli.commands import config, init, key, model, provider, team
+from llm_cli.commands import admin, config, init, key, model, provider, team
 
 app = typer.Typer(
     name="llm",
@@ -12,6 +12,7 @@ app = typer.Typer(
 )
 
 # Register sub-commands
+app.add_typer(admin.app, name="admin", help="Enterprise proxy administration")
 app.add_typer(config.app, name="config", help="Manage configurations and environments")
 app.add_typer(provider.app, name="provider", help="List supported providers and models")
 app.add_typer(model.app, name="model", help="Manage models on LiteLLM Proxy")

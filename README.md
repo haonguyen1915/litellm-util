@@ -242,6 +242,29 @@ llm team delete backend --yes
 
 ---
 
+### `llm admin`
+
+Enterprise proxy administration commands.
+
+```bash
+# Rotate master key (interactive - prompts for new key or auto-generates)
+llm admin rotate-key
+
+# With org/env override
+llm admin rotate-key --org my-company --env prod
+```
+
+The `rotate-key` command:
+1. Shows current context (org/env/url)
+2. Prompts for a new key or auto-generates one (`sk-` prefixed)
+3. Calls `POST /key/regenerate` to rotate and re-encrypt all model API keys in the DB
+4. Offers to update local config with the new key
+5. Copies new key to clipboard
+
+> **Note:** This is a LiteLLM Enterprise feature. Requires an Enterprise license on the proxy.
+
+---
+
 ## Multi-Environment Workflow
 
 The CLI supports managing multiple organizations, each with multiple environments (dev, staging, prod).
@@ -327,6 +350,7 @@ src/llm_cli/
     model.py           # llm model [list|create|delete]
     key.py             # llm key [list|create|delete]
     team.py            # llm team [list|create|delete|update]
+    admin.py           # llm admin [rotate-key]
   core/
     config.py          # Config load/save (~/.litellm/)
     client.py          # LiteLLM Proxy HTTP client

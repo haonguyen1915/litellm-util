@@ -607,6 +607,26 @@ class LiteLLMClient:
                 msg = msg[:200] + "..."
             return False, msg
 
+    # ==================== Key Rotation ====================
+
+    def rotate_master_key(self, new_master_key: str) -> dict[str, Any]:
+        """Rotate the proxy master key (Enterprise only).
+
+        Calls POST /key/regenerate with current key + new key.
+        Re-encrypts all model API keys in DB.
+
+        Args:
+            new_master_key: The new master key to set.
+
+        Returns:
+            Response data from the API.
+        """
+        data = {
+            "key": self._context.master_key,
+            "new_master_key": new_master_key,
+        }
+        return self._request("POST", "/key/regenerate", json=data)
+
     # ==================== Health Check ====================
 
     def health_check(self) -> bool:
