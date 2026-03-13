@@ -147,6 +147,7 @@ def confirm(message: str, default: bool = False) -> bool:
 def fuzzy_select(
     message: str,
     choices: list[str],
+    default: str = "",
 ) -> str | None:
     """Select from list with fuzzy/autocomplete search.
 
@@ -155,6 +156,7 @@ def fuzzy_select(
     Args:
         message: Question to display.
         choices: List of choices.
+        default: Default value pre-filled in the input.
 
     Returns:
         Selected choice or None if cancelled.
@@ -165,6 +167,7 @@ def fuzzy_select(
     result = questionary.autocomplete(
         message,
         choices=choices,
+        default=default,
         style=custom_style,
         match_middle=True,
     ).ask()

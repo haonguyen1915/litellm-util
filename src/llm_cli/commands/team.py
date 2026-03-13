@@ -101,7 +101,7 @@ def create_team(
     max_budget = budget
     budget_duration = None
     if max_budget is None:
-        if confirm("Set monthly budget?", default=False):
+        if confirm("Set monthly budget? (default: Unlimited)", default=False):
             budget_str = text_input("Monthly budget ($):")
             if budget_str:
                 try:
@@ -109,7 +109,7 @@ def create_team(
                 except ValueError:
                     warning("Invalid budget value, skipping")
 
-    if max_budget and (reset_monthly or confirm("Enable auto-reset monthly?", default=True)):
+    if max_budget and (reset_monthly or confirm("Enable auto-reset monthly? (default: Yes)", default=True)):
         budget_duration = "monthly"
 
     # Create the team
@@ -185,17 +185,17 @@ def update_team(
         print_teams_table(teams, context_name)
 
         # Fuzzy select team
-        team_choices = [t.team_id for t in teams]
+        team_map = {
+            f"{t.team_alias or t.team_id} ({t.team_id})": t
+            for t in teams
+        }
         console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
-        selection = fuzzy_select("Update team:", team_choices)
-        if selection is None or selection not in team_choices:
+        selection = fuzzy_select("Update team:", list(team_map.keys()))
+        if selection is None or selection not in team_map:
             raise typer.Exit(1)
 
-        for t in teams:
-            if t.team_id == selection:
-                selected_team = t
-                team_id = t.team_id
-                break
+        selected_team = team_map[selection]
+        team_id = selected_team.team_id
     else:
         for t in teams:
             if t.team_id == team_id:
@@ -345,17 +345,17 @@ def delete_team(
         print_teams_table(teams, context_name)
 
         # Fuzzy select team
-        team_choices = [t.team_id for t in teams]
+        team_map = {
+            f"{t.team_alias or t.team_id} ({t.team_id})": t
+            for t in teams
+        }
         console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
-        selection = fuzzy_select("Delete team:", team_choices)
-        if selection is None or selection not in team_choices:
+        selection = fuzzy_select("Delete team:", list(team_map.keys()))
+        if selection is None or selection not in team_map:
             raise typer.Exit(1)
 
-        for t in teams:
-            if t.team_id == selection:
-                selected_team = t
-                team_id = t.team_id
-                break
+        selected_team = team_map[selection]
+        team_id = selected_team.team_id
     else:
         for t in teams:
             if t.team_id == team_id:

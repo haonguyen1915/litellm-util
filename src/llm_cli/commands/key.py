@@ -6,7 +6,7 @@ import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
-from llm_cli.ui import confirm, error, fuzzy_select, select_multiple, success, text_input
+from llm_cli.ui import confirm, error, fuzzy_select, select_from_list, success, text_input
 from llm_cli.ui.console import console, print_detail, warning
 from llm_cli.ui.tables import print_keys_table, print_proxy_models_table, print_teams_table
 from llm_cli.utils.clipboard import copy_to_clipboard
@@ -69,7 +69,7 @@ def create_key(
     # Interactive team selection if not provided
     team_id = team
     if not team_id:
-        if confirm("Assign to team?", default=False):
+        if confirm("Assign to team? (default: Yes)", default=True):
             try:
                 teams = client.list_teams()
                 if teams:
@@ -78,11 +78,14 @@ def create_key(
                     print_teams_table(teams, context_name)
 
                     # Fuzzy select team
-                    team_choices = [t.team_id for t in teams]
+                    team_map = {
+                        f"{t.team_alias or t.team_id} ({t.team_id})": t.team_id
+                        for t in teams
+                    }
                     console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
-                    selection = fuzzy_select("Team:", team_choices)
-                    if selection and selection in team_choices:
-                        team_id = selection
+                    selection = fuzzy_select("Team:", list(team_map.keys()))
+                    if selection and selection in team_map:
+                        team_id = team_map[selection]
             except Exception:
                 pass  # Continue without team
 
@@ -90,7 +93,7 @@ def create_key(
     max_budget = budget
     budget_duration = None
     if max_budget is None:
-        if confirm("Set budget limit?", default=False):
+        if confirm("Set budget limit? (default: Unlimited)", default=False):
             budget_str = text_input("Monthly budget ($):")
             if budget_str:
                 try:
@@ -104,28 +107,61 @@ def create_key(
     if models:
         model_list = [m.strip() for m in models.split(",")]
     else:
-        if confirm("Restrict to specific models?", default=False):
-            try:
-                proxy_models = client.list_models()
-                if proxy_models:
-                    model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
-                    if model_names:
-                        # Show deployed models table
-                        context_name = f"{client.context.organization_id}/{client.context.environment}"
-                        print_proxy_models_table(proxy_models, context_name)
+        try:
+            proxy_models = client.list_models()
+            if proxy_models:
+                model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
+                if model_names:
+                    # Show deployed models table
+                    context_name = f"{client.context.organization_id}/{client.context.environment}"
+                    print_proxy_models_table(proxy_models, context_name)
 
-                        # Multi-select models
-                        selected = select_multiple("Select models:", model_names)
-                        if selected:
-                            model_list = selected
-            except Exception:
-                pass  # Continue without model restriction
+                    # Fuzzy search loop for multi-select
+                    selected_models: list[str] = []
+
+                    while True:
+                        remaining = [m for m in model_names if m not in selected_models]
+                        if not remaining:
+                            break
+
+                        if not selected_models:
+                            console.print(
+                                "\n[dim]Enter = All Team Models | Type to search & restrict:[/dim]"
+                            )
+                        else:
+                            console.print(
+                                f"\n[dim]Selected: {', '.join(selected_models)}[/dim]"
+                            )
+                            console.print("[dim]Enter = Done | Type to add more:[/dim]")
+
+                        pick = fuzzy_select("Model access:", remaining)
+
+                        if not pick or pick not in remaining:
+                            break
+                        selected_models.append(pick)
+
+                    if selected_models:
+                        model_list = selected_models
+        except Exception:
+            pass  # Continue without model restriction
 
     # Interactive expiration
     expires_date = expires
     if not expires_date:
-        if confirm("Set expiration?", default=False):
+        if confirm("Set expiration? (default: Never)", default=False):
             expires_date = text_input("Expiration date (YYYY-MM-DD):")
+
+    # Show summary and confirm before creating
+    console.print("\n[bold]Key Summary:[/bold]")
+    print_detail("Alias", alias or "(none)")
+    print_detail("Team", team_id or "None")
+    print_detail("Budget", f"${max_budget}/{budget_duration or 'month'}" if max_budget else "Unlimited")
+    print_detail("Models", ", ".join(model_list) if model_list else "All models")
+    print_detail("Expires", expires_date or "Never")
+    console.print()
+
+    if not confirm("Create this key?", default=True):
+        raise typer.Exit(1)
 
     # Create the key
     try:
@@ -140,18 +176,11 @@ def create_key(
 
         key = result.get("key", result.get("token", ""))
 
+        console.print()
         success("Virtual key created:")
         if alias:
             print_detail("Alias", alias)
         print_detail("Key", key)
-        if team_id:
-            print_detail("Team", team_id)
-        if max_budget:
-            print_detail("Budget", f"${max_budget}/{budget_duration or 'month'}")
-        if model_list:
-            print_detail("Models", ", ".join(model_list))
-        if expires_date:
-            print_detail("Expires", expires_date)
 
         console.print()
         warning("Save this key! It won't be shown again.")

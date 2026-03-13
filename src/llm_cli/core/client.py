@@ -411,12 +411,17 @@ class LiteLLMClient:
             data["key_alias"] = key_alias
         if team_id:
             data["team_id"] = team_id
+        # Models: specific list or "all-team-models" sentinel
         if models:
             data["models"] = models
+        else:
+            data["models"] = ["all-team-models"]
         if max_budget is not None:
             data["max_budget"] = max_budget
         if budget_duration:
-            data["budget_duration"] = budget_duration
+            # LiteLLM API expects "30d" format, not "monthly"
+            duration_map = {"monthly": "30d", "daily": "1d", "weekly": "7d"}
+            data["budget_duration"] = duration_map.get(budget_duration, budget_duration)
         if expires:
             data["expires"] = expires
         if metadata:
