@@ -1,0 +1,78 @@
+defaults:
+  max_retries: 3
+  mode: chat
+
+models:
+  # ── OpenAI ──────────────────────────────────────────────
+  - public_name: gpt-4o
+    provider: openai
+    provider_model: gpt-4o
+    api_key: ${OPENAI_API_KEY}
+    api_base: https://api.openai.com/v1
+    max_retries: 2
+    input_cost_per_token: 0.0000025
+    output_cost_per_token: 0.00001
+
+  - public_name: gpt-4o-mini
+    provider: openai
+    provider_model: gpt-4o-mini
+    api_key: ${OPENAI_API_KEY}
+    api_base: https://api.openai.com/v1
+    input_cost_per_token: 0.00000015
+    output_cost_per_token: 0.0000006
+
+  - public_name: o3-mini
+    provider: openai
+    provider_model: o3-mini
+    api_key: ${OPENAI_API_KEY}
+    api_base: https://api.openai.com/v1
+
+  # ── Anthropic (Claude) ─────────────────────────────────
+  - public_name: claude-sonnet
+    provider: anthropic
+    provider_model: claude-sonnet-4-20250514
+    api_key: ${ANTHROPIC_API_KEY}
+    api_base: https://api.anthropic.com
+    timeout: 120
+    input_cost_per_token: 0.000003
+    output_cost_per_token: 0.000015
+
+  - public_name: claude-haiku
+    provider: anthropic
+    provider_model: claude-haiku-4-20250514
+    api_key: ${ANTHROPIC_API_KEY}
+    api_base: https://api.anthropic.com
+    input_cost_per_token: 0.0000008
+    output_cost_per_token: 0.000004
+
+  - public_name: claude-opus
+    provider: anthropic
+    provider_model: claude-opus-4-20250514
+    api_key: ${ANTHROPIC_API_KEY}
+    api_base: https://api.anthropic.com
+    timeout: 180
+    stream_timeout: 120
+    input_cost_per_token: 0.000015
+    output_cost_per_token: 0.000075
+
+  # ── Google Gemini ───────────────────────────────────────
+  - public_name: gemini-2.5-pro
+    provider: gemini
+    provider_model: gemini-2.5-pro-preview-06-05
+    api_key: ${GEMINI_API_KEY}
+    input_cost_per_token: 0.00000125
+    output_cost_per_token: 0.00001
+
+  - public_name: gemini-2.5-flash
+    provider: gemini
+    provider_model: gemini-2.5-flash-preview-05-20
+    api_key: ${GEMINI_API_KEY}
+    input_cost_per_token: 0.00000015
+    output_cost_per_token: 0.0000006
+
+  - public_name: gemini-2.0-flash
+    provider: gemini
+    provider_model: gemini-2.0-flash
+    api_key: ${GEMINI_API_KEY}
+    input_cost_per_token: 0.0000001
+    output_cost_per_token: 0.0000004

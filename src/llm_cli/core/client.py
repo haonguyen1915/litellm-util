@@ -594,7 +594,7 @@ class LiteLLMClient:
             litellm.completion(
                 model=model,
                 messages=[{"role": "user", "content": "hi"}],
-                max_tokens=5,
+                max_tokens=50,
                 **clean_params,
             )
             return True, "Model responded successfully"
@@ -606,6 +606,11 @@ class LiteLLMClient:
             # Rate limited means credentials work, model is accessible
             return True, "Model is accessible (rate limited on test request)"
         except litellm.BadRequestError as e:
+            err_msg = str(e).lower()
+            # Some models (e.g. o-series) don't support max_tokens param
+            # but still respond — treat as success
+            if "max_tokens" in err_msg or "max_completion_tokens" in err_msg:
+                return True, "Model is accessible (max_tokens param not supported by this model)"
             return False, f"Bad request: {e}"
         except litellm.APIConnectionError as e:
             return False, f"Cannot connect to provider API: {e}"

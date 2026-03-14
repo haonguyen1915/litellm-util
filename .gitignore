@@ -4,3 +4,4 @@ dist
 docs
 __pycache__/
 *.pyc
+no_commit

@@ -1,13 +1,15 @@
 """Model commands - Manage models on LiteLLM Proxy."""
 
+from pathlib import Path
 from typing import Optional
 
 import typer
+from rich.table import Table
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
 from llm_cli.ui import confirm, error, fuzzy_select, success, text_input, warning
-from llm_cli.ui.console import console, print_detail
+from llm_cli.ui.console import console, info, print_detail
 from llm_cli.ui.tables import print_models_table, print_proxy_models_table
 
 app = typer.Typer(no_args_is_help=True)
@@ -298,6 +300,142 @@ def _create_model_non_interactive(
         raise typer.Exit(4)
     except APIError as e:
         error(f"Failed to create model: {e.message}")
+        raise typer.Exit(1)
+
+
+@app.command("apply")
+def apply_models(
+    file: Path = typer.Option(
+        ..., "--file", "-f", exists=True, readable=True, resolve_path=True,
+        help="Path to models YAML file",
+    ),
+    env_file: Optional[Path] = typer.Option(
+        None, "--env-file", exists=True, readable=True, resolve_path=True,
+        help="Path to .env file (default: .env next to models file)",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate and preview without creating"),
+    skip_test: bool = typer.Option(False, "--skip-test", help="Skip model connection testing"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """Bulk create models from a YAML file."""
+    from llm_cli.core.apply import ModelApplyService
+
+    client = _get_client(org, env)
+    context_name = f"{client.context.organization_id}/{client.context.environment}"
+
+    info(f"Loading models from {file.name}")
+
+    service = ModelApplyService(client)
+    models_file, validation_errors = service.load_and_validate(file, env_file=env_file)
+
+    if validation_errors:
+        console.print()
+        error(f"Validation failed with {len(validation_errors)} error(s):")
+        console.print()
+        for ve in validation_errors:
+            console.print(f"  {ve}", style="dim")
+        console.print()
+        raise typer.Exit(1)
+
+    assert models_file is not None  # guaranteed when no errors
+
+    # Preview table
+    console.print()
+    table = Table(
+        title=f"Models to apply on {context_name}",
+        show_header=True,
+        header_style="bold",
+        padding=(0, 1),
+    )
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Public Name", style="cyan")
+    table.add_column("Provider")
+    table.add_column("Model")
+    table.add_column("Mode", style="dim")
+    table.add_column("API Key", style="dim")
+
+    for i, model in enumerate(models_file.models, 1):
+        masked_key = "***" if model.api_key else "-"
+        table.add_row(
+            str(i),
+            model.public_name,
+            model.provider,
+            model.provider_model,
+            model.mode or "chat",
+            masked_key,
+        )
+
+    console.print(table)
+    console.print()
+    console.print(f"Total: {len(models_file.models)} model(s)")
+    console.print()
+
+    if dry_run:
+        success("Dry run completed — no models were created")
+        raise typer.Exit(0)
+
+    # Test models
+    models_to_create = models_file.models
+    if not skip_test:
+        console.print("[dim]Testing model connections...[/dim]")
+        console.print()
+        test_results = service.test_models(models_file)
+
+        passed_names: set[str] = set()
+        test_passed = 0
+        test_failed = 0
+        for tr in test_results:
+            if tr.passed:
+                test_passed += 1
+                passed_names.add(tr.model_name)
+                success(f"{tr.model_name} -> {tr.message}")
+            else:
+                test_failed += 1
+                error(f"{tr.model_name} -> {tr.message}")
+
+        console.print()
+        console.print(f"Test: {test_passed} passed, {test_failed} failed")
+        console.print()
+
+        if test_failed > 0:
+            models_to_create = [m for m in models_file.models if m.public_name in passed_names]
+            if not models_to_create:
+                error("All models failed testing — nothing to create")
+                raise typer.Exit(1)
+
+    # Confirm
+    if not confirm(
+        f"Create {len(models_to_create)} model(s) on {context_name}?",
+        default=True,
+    ):
+        raise typer.Exit(0)
+
+    console.print()
+
+    # Apply
+    skipped = len(models_file.models) - len(models_to_create)
+    report = service.apply(models_to_create)
+    report.skipped = skipped
+
+    for result in report.results:
+        if result.success:
+            success(f"{result.model_name} -> {result.provider_model}")
+        else:
+            error(f"{result.model_name} -> {result.message}")
+
+    console.print()
+    parts = [f"{report.created} created"]
+    if report.failed:
+        parts.append(f"{report.failed} failed")
+    if report.skipped:
+        parts.append(f"{report.skipped} skipped")
+    summary = ", ".join(parts)
+
+    if report.failed == 0:
+        success(f"Done: {summary}")
+    else:
+        warning(f"Done: {summary}")
         raise typer.Exit(1)
 
 
