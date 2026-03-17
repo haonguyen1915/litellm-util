@@ -429,6 +429,31 @@ class LiteLLMClient:
 
         return self._request("POST", "/key/generate", json=data)
 
+    def update_key(
+        self,
+        key: str,
+        key_alias: str | None = None,
+        team_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a virtual key.
+
+        Args:
+            key: The key token to update.
+            key_alias: New alias/name.
+            team_id: New team ID.
+
+        Returns:
+            Updated key info.
+        """
+        data: dict[str, Any] = {"key": key}
+
+        if key_alias is not None:
+            data["key_alias"] = key_alias
+        if team_id is not None:
+            data["team_id"] = team_id
+
+        return self._request("POST", "/key/update", json=data)
+
     def delete_key(self, key: str) -> dict[str, Any]:
         """Delete a virtual key.
 
