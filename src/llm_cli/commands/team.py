@@ -27,7 +27,12 @@ def list_teams(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """List all teams."""
+    """List all teams.
+
+    Examples:
+        llm team list
+        llm team list -o FTECH -e prod
+    """
     client = _get_client(org, env)
     context_name = f"{client.context.organization_id}/{client.context.environment}"
 
@@ -52,7 +57,12 @@ def get_team(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Get details of a specific team."""
+    """Get details of a specific team.
+
+    Examples:
+        llm team get                        # Interactive selection
+        llm team get TEAM_ID                # By team ID
+    """
     client = _get_client(org, env)
 
     # If no team_id provided, list teams and let user pick
@@ -116,7 +126,13 @@ def create_team(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Create a new team."""
+    """Create a new team.
+
+    Examples:
+        llm team create                             # Interactive
+        llm team create -n "AI Team"                # With name
+        llm team create -n "AI Team" -b 500 -m "gpt-4o,claude-sonnet"
+    """
     client = _get_client(org, env)
 
     if not name:
@@ -250,7 +266,15 @@ def update_team(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Update an existing team."""
+    """Update an existing team.
+
+    Examples:
+        llm team update                                    # Interactive
+        llm team update TEAM_ID --name "New Name"          # Rename team
+        llm team update TEAM_ID --add-models "gpt-4o,claude-sonnet"
+        llm team update TEAM_ID --remove-models "gpt-4o"
+        llm team update TEAM_ID --budget 500
+    """
     client = _get_client(org, env)
 
     # Get teams list for selection
@@ -457,7 +481,13 @@ def delete_team(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Delete a team."""
+    """Delete a team.
+
+    Examples:
+        llm team delete                         # Interactive selection
+        llm team delete TEAM_ID                  # By team ID
+        llm team delete TEAM_ID --yes            # Skip confirmation
+    """
     client = _get_client(org, env)
 
     try:

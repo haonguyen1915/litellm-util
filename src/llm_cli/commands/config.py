@@ -15,7 +15,11 @@ app = typer.Typer(no_args_is_help=True)
 
 @app.command("list")
 def list_configs() -> None:
-    """List all organizations and environments."""
+    """List all organizations and environments.
+
+    Examples:
+        llm config list
+    """
     config = load_config()
 
     if not config.organizations:
@@ -36,7 +40,13 @@ def use_config(
     org: Optional[str] = typer.Argument(None, help="Organization ID"),
     env: Optional[str] = typer.Argument(None, help="Environment name"),
 ) -> None:
-    """Switch to a different organization/environment."""
+    """Switch to a different organization/environment.
+
+    Examples:
+        llm config use                  # Interactive selection
+        llm config use PREP dev         # Switch to PREP/dev
+        llm config use FTECH prod       # Switch to FTECH/prod
+    """
     config = load_config()
 
     if not config.organizations:
@@ -101,7 +111,11 @@ def use_config(
 
 @app.command("current")
 def current_config() -> None:
-    """Show current active configuration."""
+    """Show current active configuration.
+
+    Examples:
+        llm config current
+    """
     try:
         ctx = get_current_context()
         console.print()

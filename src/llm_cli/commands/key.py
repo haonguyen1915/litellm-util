@@ -28,7 +28,12 @@ def list_keys(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """List all virtual keys."""
+    """List all virtual keys.
+
+    Examples:
+        llm key list
+        llm key list -o PREP -e DEV
+    """
     client = _get_client(org, env)
     context_name = f"{client.context.organization_id}/{client.context.environment}"
 
@@ -59,7 +64,13 @@ def create_key(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Create a new virtual key."""
+    """Create a new virtual key.
+
+    Examples:
+        llm key create                                      # Interactive
+        llm key create -a my-key -t TEAM_ID                 # With alias and team
+        llm key create -a my-key -b 100 --expires 2025-12-31
+    """
     client = _get_client(org, env)
 
     # If alias not provided, prompt for it
@@ -220,7 +231,14 @@ def update_key(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Update a virtual key (name, team)."""
+    """Update a virtual key (name, team).
+
+    Examples:
+        llm key update                              # Interactive
+        llm key update my-key --name new-name       # Rename
+        llm key update my-key --team TEAM_ID        # Change team
+        llm key update my-key -n new-name -t TEAM_ID
+    """
     client = _get_client(org, env)
 
     try:
@@ -350,7 +368,13 @@ def delete_key(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Delete a virtual key."""
+    """Delete a virtual key.
+
+    Examples:
+        llm key delete                      # Interactive selection
+        llm key delete my-key               # By alias
+        llm key delete my-key --yes         # Skip confirmation
+    """
     client = _get_client(org, env)
 
     try:

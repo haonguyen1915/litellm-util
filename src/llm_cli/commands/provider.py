@@ -58,7 +58,13 @@ def list_providers(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """List all providers supported by LiteLLM (from proxy /model_cost)."""
+    """List all providers supported by LiteLLM (from proxy /model_cost).
+
+    Examples:
+        llm provider list
+        llm provider list -s openai
+        llm provider list -s anthropic
+    """
     client = _get_client(org, env)
 
     try:
@@ -130,7 +136,15 @@ def list_models(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """List all models supported by LiteLLM for a provider."""
+    """List all models supported by LiteLLM for a provider.
+
+    Examples:
+        llm provider models                             # Interactive provider selection
+        llm provider models openai                      # List OpenAI models
+        llm provider models anthropic -s sonnet         # Search Anthropic models
+        llm provider models openai --sort price         # Sort by price
+        llm provider models openai -c vision -n         # Vision models, non-interactive
+    """
     client = _get_client(org, env)
 
     try:

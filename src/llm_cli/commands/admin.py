@@ -29,7 +29,12 @@ def rotate_key(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Rotate the proxy master key (Enterprise feature)."""
+    """Rotate the proxy master key (Enterprise feature).
+
+    Examples:
+        llm admin rotate-key
+        llm admin rotate-key -o PREP -e prod
+    """
     client = _get_client(org, env)
     ctx = client.context
 

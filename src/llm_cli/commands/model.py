@@ -29,7 +29,12 @@ def list_models(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """List all models on the proxy."""
+    """List all models on the proxy.
+
+    Examples:
+        llm model list
+        llm model list -o PREP -e dev
+    """
     client = _get_client(org, env)
     context_name = f"{client.context.organization_id}/{client.context.environment}"
 
@@ -63,7 +68,16 @@ def create_model(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Create a new model on the proxy."""
+    """Create a new model on the proxy.
+
+    Examples:
+        llm model create                                                    # Interactive
+        llm model create -p openai -m gpt-4o -a my-gpt4o -k sk-xxx
+        llm model create -p anthropic -m claude-sonnet-4-20250514 -a claude-sonnet -k sk-ant-xxx
+        llm model create -p azure -m gpt-4o -a azure-gpt4o -k xxx
+        llm model create -p gemini -m gemini-2.5-pro -a gemini-pro -k AIza-xxx
+        llm model create -p groq -m llama-3.3-70b-versatile -a llama70b -k gsk-xxx
+    """
     # If all required params provided, run non-interactively
     if provider_name and model_id and alias:
         _create_model_non_interactive(provider_name, model_id, alias, api_key, org, env)
@@ -337,7 +351,14 @@ def apply_models(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Bulk create models from a YAML file."""
+    """Bulk create models from a YAML file.
+
+    Examples:
+        llm model apply -f models.yaml
+        llm model apply -f models.yaml --dry-run
+        llm model apply -f models.yaml --skip-test
+        llm model apply -f models.yaml --env-file prod.env
+    """
     from llm_cli.core.apply import ModelApplyService
 
     client = _get_client(org, env)
@@ -465,7 +486,13 @@ def delete_model(
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Delete a model from the proxy."""
+    """Delete a model from the proxy.
+
+    Examples:
+        llm model delete                    # Interactive selection
+        llm model delete my-gpt4o           # By name
+        llm model delete my-gpt4o --yes     # Skip confirmation
+    """
     client = _get_client(org, env)
 
     try:

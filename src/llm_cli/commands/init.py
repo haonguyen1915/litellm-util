@@ -10,7 +10,11 @@ from llm_cli.ui.console import console
 
 
 def init_command() -> None:
-    """Initialize or add new organization/environment."""
+    """Initialize or add new organization/environment.
+
+    Examples:
+        llm init                # First-time setup or add new org/env
+    """
     config = load_config()
 
     # Check if we have existing orgs
