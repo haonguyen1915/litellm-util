@@ -459,6 +459,55 @@ def print_spend_by_key_table(
     console.print("Spend is cumulative within each key's budget period.", style="dim italic")
 
 
+def print_global_spend_keys_table(
+    data: list[dict],
+    context_name: str = "",
+    top_n: int = 0,
+) -> None:
+    """Print all keys with spend history (including deleted/internal)."""
+    entries = sorted(data, key=lambda d: d.get("total_spend", 0), reverse=True)
+
+    if top_n > 0:
+        entries = entries[:top_n]
+
+    title = "Spend by API Key (all)"
+    if context_name:
+        title += f" on {context_name}"
+
+    table = Table(title=title, show_header=True, header_style="bold cyan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Key", style="dim")
+    table.add_column("Alias", style="white")
+    table.add_column("Spend", style="green", justify="right")
+
+    total_spend = 0.0
+    for i, entry in enumerate(entries, 1):
+        api_key = entry.get("api_key", "")
+        alias = entry.get("key_alias") or entry.get("key_name") or "-"
+
+        # Mask key
+        if len(api_key) > 10:
+            key_display = f"{api_key[:7]}...{api_key[-6:]}"
+        else:
+            key_display = api_key
+
+        spend = entry.get("total_spend", 0.0)
+        table.add_row(
+            str(i),
+            key_display,
+            alias,
+            _format_spend(spend),
+        )
+        total_spend += spend
+
+    console.print(table)
+    console.print(
+        f"\nTotal: {len(entries)} API keys | Combined spend: {_format_spend(total_spend)}",
+        style="dim",
+    )
+    console.print("Includes deleted and internal keys. Spend is all-time.", style="dim italic")
+
+
 def print_spend_by_team_table(
     teams: list[Team],
     context_name: str = "",

@@ -11,6 +11,7 @@ from llm_cli.ui import error
 from llm_cli.ui.console import console
 from llm_cli.ui.tables import (
     print_daily_activity_table,
+    print_global_spend_keys_table,
     print_spend_by_key_table,
     print_spend_by_model_table,
     print_spend_by_team_table,
@@ -114,24 +115,30 @@ def summary(
 
 @app.command("by-key")
 def by_key(
+    all_keys: bool = typer.Option(False, "--all", "-a", help="Include deleted and internal keys"),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
 ) -> None:
     """Spend grouped by API key.
 
-    Shows total spend per key from the proxy. Spend is cumulative (not date-filtered).
+    By default shows active keys only. Use --all to include deleted/internal keys.
 
     Examples:
         llm usage by-key
+        llm usage by-key --all
         llm usage by-key --top 5
     """
     client = _get_client(org, env)
     context_name = f"{client.context.organization_id}/{client.context.environment}"
 
     try:
-        keys = client.list_keys()
-        print_spend_by_key_table(keys, context_name=context_name, top_n=top)
+        if all_keys:
+            data = client.get_global_spend_keys()
+            print_global_spend_keys_table(data, context_name=context_name, top_n=top)
+        else:
+            keys = client.list_keys()
+            print_spend_by_key_table(keys, context_name=context_name, top_n=top)
     except ConnectionError:
         error("Cannot connect to LiteLLM Proxy")
         console.print(f"  URL: {client.base_url}", style="dim")

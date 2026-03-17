@@ -360,6 +360,20 @@ class LiteLLMClient:
 
     # ==================== Key Operations ====================
 
+    def get_global_spend_keys(self, limit: int = 50) -> list[dict]:
+        """Get all keys with spend history (including deleted/internal).
+
+        Uses /global/spend/keys which returns all keys that have ever had spend,
+        unlike /key/list which only returns currently active keys.
+
+        Returns:
+            List of dicts with api_key, key_alias, key_name, total_spend.
+        """
+        response = self._request(
+            "GET", "/global/spend/keys", params={"limit": limit}
+        )
+        return response if isinstance(response, list) else []
+
     def list_keys(self) -> list[VirtualKey]:
         """List all virtual keys.
 

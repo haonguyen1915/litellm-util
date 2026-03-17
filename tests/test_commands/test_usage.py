@@ -243,6 +243,39 @@ class TestByKey:
         assert result.exit_code == 0
         client.list_keys.assert_called_once()
 
+    @patch("llm_cli.commands.usage.LiteLLMClient")
+    def test_by_key_all(self, mock_cls):
+        """--all uses /global/spend/keys endpoint."""
+        client = _mock_client()
+        client.get_global_spend_keys.return_value = [
+            {"api_key": "d66b4c1aaa", "key_alias": None, "total_spend": 189.38},
+            {"api_key": "14c3b03bbb", "key_alias": "LA-DEV", "total_spend": 2.44},
+            {"api_key": "litellm-internal-health-check", "key_alias": None, "total_spend": 0.31},
+        ]
+        mock_cls.return_value = client
+
+        result = runner.invoke(app, ["usage", "by-key", "--all"])
+        assert result.exit_code == 0
+        assert "all" in result.output.lower()
+        assert "LA-DEV" in result.output
+        assert "litellm" in result.output
+        client.get_global_spend_keys.assert_called_once()
+        client.list_keys.assert_not_called()
+
+    @patch("llm_cli.commands.usage.LiteLLMClient")
+    def test_by_key_all_top_n(self, mock_cls):
+        client = _mock_client()
+        client.get_global_spend_keys.return_value = [
+            {"api_key": "key-aaa", "key_alias": None, "total_spend": 100.0},
+            {"api_key": "key-bbb", "key_alias": "dev", "total_spend": 50.0},
+            {"api_key": "key-ccc", "key_alias": None, "total_spend": 10.0},
+        ]
+        mock_cls.return_value = client
+
+        result = runner.invoke(app, ["usage", "by-key", "--all", "--top", "2"])
+        assert result.exit_code == 0
+        assert "2 api keys" in result.output.lower()
+
 
 class TestByTeam:
     @patch("llm_cli.commands.usage.LiteLLMClient")
