@@ -160,7 +160,8 @@ def _write_yaml(tmp_path: Path, data: dict) -> Path:
 
 class TestLoadAndValidate:
     def _make_service(self) -> ModelApplyService:
-        client = MagicMock(spec=["create_model", "context"])
+        client = MagicMock(spec=["create_model", "list_models", "context"])
+        client.list_models.return_value = []
         return ModelApplyService(client)
 
     def test_valid_file(self, tmp_path, monkeypatch):
@@ -362,6 +363,28 @@ class TestLoadAndValidate:
         models_file, errors = service.load_and_validate(path)
         assert models_file is None
         assert any("duplicate" in e.message for e in errors)
+
+    def test_duplicate_against_proxy(self, tmp_path):
+        """Model name already exists on proxy → validation error."""
+        data = {
+            "models": [
+                {"public_name": "gpt-4o", "provider": "openai", "provider_model": "gpt-4o"},
+                {"public_name": "new-model", "provider": "openai", "provider_model": "gpt-4"},
+            ]
+        }
+        path = _write_yaml(tmp_path, data)
+        service = self._make_service()
+        # Simulate proxy already has "gpt-4o"
+        service.client.list_models.return_value = [
+            {"model_name": "gpt-4o", "litellm_params": {"model": "openai/gpt-4o"}},
+        ]
+        models_file, errors = service.load_and_validate(path)
+        assert models_file is None
+        assert any("already exists" in e.message for e in errors)
+        # Only gpt-4o should fail, not new-model
+        dup_errors = [e for e in errors if "already exists" in e.message]
+        assert len(dup_errors) == 1
+        assert dup_errors[0].model_name == "gpt-4o"
 
 
 class TestBuildApiPayload:

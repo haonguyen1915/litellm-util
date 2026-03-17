@@ -246,7 +246,7 @@ def print_team_details(team: "Team") -> None:
     table.add_row("Name", team.team_alias or "-")
 
     if team.models:
-        table.add_row("Models", ", ".join(team.models))
+        table.add_row("Models", f"{len(team.models)} model(s)")
     else:
         table.add_row("Models", "All models")
 
@@ -260,6 +260,19 @@ def print_team_details(team: "Team") -> None:
     table.add_row("Members", str(len(team.members)))
 
     console.print(table)
+
+    # Show models in a separate table if any
+    if team.models:
+        models_table = Table(
+            title="Team Models",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        models_table.add_column("#", style="dim", width=4)
+        models_table.add_column("Model Name", style="white")
+        for i, model in enumerate(sorted(team.models), 1):
+            models_table.add_row(str(i), model)
+        console.print(models_table)
 
 
 def print_config_table(orgs: dict) -> None:

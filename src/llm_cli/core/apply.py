@@ -364,12 +364,29 @@ class ModelApplyService:
 
         return {**raw, "models": merged_models}
 
-    @staticmethod
     def _validate_semantic(
-        models_file: ModelsFile, errors: list[ValidationError]
+        self, models_file: ModelsFile, errors: list[ValidationError]
     ) -> None:
         """Phase 3: semantic checks using existing validators."""
+        # Check duplicates against proxy
+        try:
+            existing_models = self.client.list_models()
+            existing_names = {m.get("model_name", "") for m in existing_models}
+        except (APIError, AuthenticationError, ConnectionError):
+            existing_names = set()
+
         for i, model in enumerate(models_file.models):
+            # Check duplicate against proxy
+            if model.public_name in existing_names:
+                errors.append(
+                    ValidationError(
+                        model_index=i,
+                        model_name=model.public_name,
+                        field="public_name",
+                        message=f"model '{model.public_name}' already exists on the proxy",
+                    )
+                )
+
             # Validate api_key
             if model.api_key is not None:
                 result = validate_api_key(model.api_key)
