@@ -4,7 +4,7 @@ import sys
 
 import typer
 
-from llm_cli.commands import admin, config, history, init, key, model, provider, team
+from llm_cli.commands import admin, config, history, init, key, model, provider, team, usage
 from llm_cli.core.history import record_command
 
 app = typer.Typer(
@@ -40,6 +40,7 @@ app.add_typer(provider.app, name="provider", help="List supported providers and 
 app.add_typer(model.app, name="model", help="Manage models on LiteLLM Proxy")
 app.add_typer(key.app, name="key", help="Manage virtual API keys")
 app.add_typer(team.app, name="team", help="Manage teams and permissions")
+app.add_typer(usage.app, name="usage", help="View spend and usage statistics")
 
 # Direct commands
 app.command(name="init", help="Initialize or add new organization/environment")(init.init_command)

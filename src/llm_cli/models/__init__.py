@@ -5,9 +5,18 @@ from llm_cli.models.config import Config, DefaultContext, Environment, Organizat
 from llm_cli.models.key import VirtualKey
 from llm_cli.models.provider import ModelInfo, ProviderInfo
 from llm_cli.models.team import Team
+from llm_cli.models.usage import (
+    ActivityEntry,
+    DailySpendEntry,
+    SpendLogEntry,
+    TagSummaryEntry,
+    TagSummaryResponse,
+)
 
 __all__ = [
+    "ActivityEntry",
     "Config",
+    "DailySpendEntry",
     "DefaultContext",
     "Environment",
     "ModelDefaults",
@@ -16,6 +25,9 @@ __all__ = [
     "Organization",
     "ModelInfo",
     "ProviderInfo",
+    "SpendLogEntry",
+    "TagSummaryEntry",
+    "TagSummaryResponse",
     "Team",
     "VirtualKey",
 ]

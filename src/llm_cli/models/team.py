@@ -16,3 +16,4 @@ class Team(BaseModel):
     metadata: dict | None = None
     members: list = Field(default_factory=list)
     blocked: bool = False
+    spend: float = 0.0

@@ -1,6 +1,6 @@
 """CLI commands."""
 
-from llm_cli.commands import config, init, key, model, provider, team
+from llm_cli.commands import config, init, key, model, provider, team, usage
 
 __all__ = [
     "config",
@@ -9,4 +9,5 @@ __all__ = [
     "model",
     "provider",
     "team",
+    "usage",
 ]
