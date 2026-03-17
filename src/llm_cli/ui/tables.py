@@ -456,6 +456,7 @@ def print_spend_by_key_table(
         f"\nTotal: {len(keys_sorted)} API keys | Combined spend: {_format_spend(total_spend)}",
         style="dim",
     )
+    console.print("Spend is cumulative within each key's budget period.", style="dim italic")
 
 
 def print_spend_by_team_table(
@@ -508,6 +509,7 @@ def print_spend_by_team_table(
         f"\nTotal: {len(teams_sorted)} teams | Combined spend: {_format_spend(total_spend)}",
         style="dim",
     )
+    console.print("Spend is cumulative within each team's budget period.", style="dim italic")
 
 
 def print_spend_by_model_table(
