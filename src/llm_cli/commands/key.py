@@ -212,6 +212,137 @@ def create_key(
         raise typer.Exit(1)
 
 
+@app.command("update")
+def update_key(
+    key_alias: Optional[str] = typer.Argument(None, help="Key alias to update"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="New key alias/name"),
+    team: Optional[str] = typer.Option(None, "--team", "-t", help="New team ID"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """Update a virtual key (name, team)."""
+    client = _get_client(org, env)
+
+    try:
+        keys = client.list_keys()
+    except ConnectionError:
+        error("Cannot connect to LiteLLM Proxy")
+        raise typer.Exit(3)
+    except AuthenticationError:
+        error("Authentication failed")
+        raise typer.Exit(4)
+    except APIError as e:
+        error(f"API Error: {e.message}")
+        raise typer.Exit(1)
+
+    if not keys:
+        error("No keys found")
+        raise typer.Exit(1)
+
+    # Select key if not provided
+    selected_key = None
+    if not key_alias:
+        context_name = f"{client.context.organization_id}/{client.context.environment}"
+        print_keys_table(keys, context_name)
+
+        key_choices = [
+            f"{k.key_alias or k.key_name or '-'} ({k.masked_key})" for k in keys
+        ]
+        console.print("\n[dim]Type to search keys (tab to complete):[/dim]")
+        selection = fuzzy_select("Update key:", key_choices)
+        if selection is None or selection not in key_choices:
+            raise typer.Exit(1)
+
+        for k in keys:
+            if k.masked_key in selection:
+                selected_key = k
+                break
+    else:
+        for k in keys:
+            if (k.key_alias and k.key_alias.lower() == key_alias.lower()) or (
+                k.key_name and k.key_name.lower() == key_alias.lower()
+            ):
+                selected_key = k
+                break
+
+        if not selected_key:
+            error(f"Key '{key_alias}' not found")
+            raise typer.Exit(5)
+
+    if not selected_key:
+        error("Key not found")
+        raise typer.Exit(5)
+
+    display_name = selected_key.key_alias or selected_key.key_name or selected_key.masked_key
+
+    # Show current info
+    console.print("\nCurrent key info:")
+    print_detail("Alias", selected_key.key_alias or selected_key.key_name or "-")
+    print_detail("Key", selected_key.masked_key)
+    print_detail("Team", selected_key.team_id or "-")
+    console.print()
+
+    # Interactive if no flags provided
+    if not any([name, team]):
+        update_choices = ["Update name", "Update team"]
+        selection = select_from_list("What would you like to update?", update_choices)
+
+        if selection is None:
+            raise typer.Exit(1)
+
+        if "name" in selection:
+            name = text_input("New alias:", default=selected_key.key_alias or "")
+
+        elif "team" in selection:
+            try:
+                teams = client.list_teams()
+                if teams:
+                    context_name = f"{client.context.organization_id}/{client.context.environment}"
+                    print_teams_table(teams, context_name)
+
+                    team_map = {
+                        f"{t.team_alias or t.team_id} ({t.team_id})": t.team_id
+                        for t in teams
+                    }
+                    console.print("\n[dim]Type to search teams (tab to complete):[/dim]")
+                    pick = fuzzy_select("Team:", list(team_map.keys()))
+                    if pick and pick in team_map:
+                        team = team_map[pick]
+            except Exception:
+                team = text_input("Team ID:")
+
+    if not name and not team:
+        warning("Nothing to update")
+        raise typer.Exit(1)
+
+    # Confirm
+    console.print("\n[bold]Update Summary:[/bold]")
+    print_detail("Key", display_name)
+    if name:
+        print_detail("New Name", name)
+    if team:
+        print_detail("New Team", team)
+    console.print()
+
+    if not confirm("Apply update?", default=True):
+        raise typer.Exit(1)
+
+    try:
+        client.update_key(
+            key=selected_key.token,
+            key_alias=name,
+            team_id=team,
+        )
+        success(f"Key '{display_name}' updated")
+        if name:
+            print_detail("Name", name)
+        if team:
+            print_detail("Team", team)
+    except APIError as e:
+        error(f"Failed to update key: {e.message}")
+        raise typer.Exit(1)
+
+
 @app.command("delete")
 def delete_key(
     key_alias: Optional[str] = typer.Argument(None, help="Key alias to delete"),

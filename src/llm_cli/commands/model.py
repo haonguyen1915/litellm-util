@@ -151,6 +151,15 @@ def create_model_interactive(
         alias = text_input("Model alias (display name):", default=default_alias)
         if not alias:
             alias = default_alias
+    # Check duplicate model name on proxy
+    try:
+        existing_models = client.list_models()
+        existing_names = {m.get("model_name", "") for m in existing_models}
+        if alias in existing_names:
+            error(f"Model '{alias}' already exists on the proxy")
+            raise typer.Exit(1)
+    except (ConnectionError, AuthenticationError, APIError):
+        pass  # Can't check — continue
 
     # Get API key with retry loop for test validation
     if prefill_api_key:
@@ -244,6 +253,16 @@ def _create_model_non_interactive(
     from llm_cli.ui import select_from_list, text_input
 
     client = _get_client(org, env)
+
+    # Check duplicate model name on proxy
+    try:
+        existing_models = client.list_models()
+        existing_names = {m.get("model_name", "") for m in existing_models}
+        if alias in existing_names:
+            error(f"Model '{alias}' already exists on the proxy")
+            raise typer.Exit(1)
+    except (ConnectionError, AuthenticationError, APIError):
+        pass  # Can't check — continue
 
     litellm_params = {"model": model_id}
     if api_key:
