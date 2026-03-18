@@ -460,19 +460,45 @@ def print_spend_by_key_table(
 
 
 def print_global_spend_keys_table(
-    data: list[dict],
+    data: dict,
     context_name: str = "",
+    start_date: str = "",
+    end_date: str = "",
     top_n: int = 0,
 ) -> None:
-    """Print all keys with spend history (including deleted/internal)."""
-    entries = sorted(data, key=lambda d: d.get("total_spend", 0), reverse=True)
+    """Print all keys with spend from /user/daily/activity/aggregated.
 
+    The response has: results[].breakdown.models.{model}.api_key_breakdown.{key}.metrics/metadata
+    We aggregate spend per key across all days and models.
+    """
+    from collections import defaultdict
+
+    key_spend: dict[str, float] = defaultdict(float)
+    key_alias: dict[str, str] = {}
+
+    results = data.get("results", []) if isinstance(data, dict) else data
+    for day in results:
+        breakdown = day.get("breakdown", {})
+        models = breakdown.get("models", {})
+        for _model_name, model_data in models.items():
+            key_breakdown = model_data.get("api_key_breakdown", {})
+            for api_key, key_data in key_breakdown.items():
+                metrics = key_data.get("metrics", {})
+                key_spend[api_key] += metrics.get("spend", 0.0)
+                # Capture alias from metadata (take first non-empty)
+                if api_key not in key_alias:
+                    meta = key_data.get("metadata", {})
+                    key_alias[api_key] = meta.get("key_alias") or meta.get("key_name") or ""
+
+    sorted_keys = sorted(key_spend.items(), key=lambda x: x[1], reverse=True)
     if top_n > 0:
-        entries = entries[:top_n]
+        sorted_keys = sorted_keys[:top_n]
 
     title = "Spend by API Key (all)"
     if context_name:
         title += f" on {context_name}"
+    if start_date and end_date:
+        title += f" ({start_date} to {end_date})"
 
     table = Table(title=title, show_header=True, header_style="bold cyan")
     table.add_column("#", style="dim", width=4)
@@ -481,17 +507,15 @@ def print_global_spend_keys_table(
     table.add_column("Spend", style="green", justify="right")
 
     total_spend = 0.0
-    for i, entry in enumerate(entries, 1):
-        api_key = entry.get("api_key", "")
-        alias = entry.get("key_alias") or entry.get("key_name") or "-"
-
+    for i, (api_key, spend) in enumerate(sorted_keys, 1):
         # Mask key
         if len(api_key) > 10:
             key_display = f"{api_key[:7]}...{api_key[-6:]}"
         else:
             key_display = api_key
 
-        spend = entry.get("total_spend", 0.0)
+        alias = key_alias.get(api_key) or "-"
+
         table.add_row(
             str(i),
             key_display,
@@ -502,10 +526,9 @@ def print_global_spend_keys_table(
 
     console.print(table)
     console.print(
-        f"\nTotal: {len(entries)} API keys | Combined spend: {_format_spend(total_spend)}",
+        f"\nTotal: {len(sorted_keys)} API keys | Combined spend: {_format_spend(total_spend)}",
         style="dim",
     )
-    console.print("Includes deleted and internal keys. Spend is all-time.", style="dim italic")
 
 
 def print_spend_by_team_table(
@@ -559,6 +582,89 @@ def print_spend_by_team_table(
         style="dim",
     )
     console.print("Spend is cumulative within each team's budget period.", style="dim italic")
+
+
+def _format_team_name(entity_id: str, alias: str) -> str:
+    """Format team display name: alias preferred, UUID truncated."""
+    if alias:
+        return alias
+    # Looks like a UUID (contains dashes, 36 chars)
+    if len(entity_id) == 36 and entity_id.count("-") == 4:
+        return f"{entity_id[:8]}…"
+    return entity_id
+
+
+def print_global_spend_teams_table(
+    data: dict | list,
+    context_name: str = "",
+    start_date: str = "",
+    end_date: str = "",
+    top_n: int = 0,
+) -> None:
+    """Print spend by team from /team/daily/activity data.
+
+    The response has: results[].breakdown.entities.{team_id}.metrics/metadata
+    We aggregate spend and requests per team across all days.
+    """
+    from collections import defaultdict
+
+    team_spend: dict[str, float] = defaultdict(float)
+    team_requests: dict[str, int] = defaultdict(int)
+    team_alias: dict[str, str] = {}
+
+    results = data.get("results", []) if isinstance(data, dict) else data
+    for day in results:
+        entities = day.get("breakdown", {}).get("entities", {})
+        for entity_id, entity_data in entities.items():
+            metrics = entity_data.get("metrics", {})
+            team_spend[entity_id] += metrics.get("spend", 0.0)
+            team_requests[entity_id] += metrics.get("api_requests", 0)
+            if entity_id not in team_alias:
+                meta = entity_data.get("metadata", {})
+                team_alias[entity_id] = meta.get("team_alias") or ""
+
+    sorted_teams = sorted(team_spend.items(), key=lambda x: x[1], reverse=True)
+    if top_n > 0:
+        sorted_teams = sorted_teams[:top_n]
+
+    title = "Spend by Team"
+    if context_name:
+        title += f" on {context_name}"
+    if start_date and end_date:
+        title += f" ({start_date} to {end_date})"
+
+    table = Table(title=title, show_header=True, header_style="bold cyan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Team", style="white")
+    table.add_column("ID", style="dim")
+    table.add_column("Spend", style="green", justify="right")
+    table.add_column("Requests", style="cyan", justify="right")
+
+    total_spend = 0.0
+    for i, (entity_id, spend) in enumerate(sorted_teams, 1):
+        alias = team_alias.get(entity_id, "")
+        display_name = _format_team_name(entity_id, alias)
+
+        # Truncate ID for display
+        if len(entity_id) > 12:
+            id_display = f"{entity_id[:8]}…"
+        else:
+            id_display = entity_id
+
+        table.add_row(
+            str(i),
+            display_name,
+            id_display,
+            _format_spend(spend),
+            str(team_requests[entity_id]),
+        )
+        total_spend += spend
+
+    console.print(table)
+    console.print(
+        f"\nTotal: {len(sorted_teams)} teams | Combined spend: {_format_spend(total_spend)}",
+        style="dim",
+    )
 
 
 def print_spend_by_model_table(

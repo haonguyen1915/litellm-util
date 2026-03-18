@@ -374,6 +374,29 @@ class LiteLLMClient:
         )
         return response if isinstance(response, list) else []
 
+    def get_aggregated_activity(
+        self,
+        start_date: str,
+        end_date: str,
+    ) -> dict:
+        """Get aggregated daily activity with breakdown by model and key.
+
+        Uses /user/daily/activity/aggregated which returns per-day data with
+        nested breakdowns: models -> api_key_breakdown -> metrics/metadata.
+
+        Args:
+            start_date: Start date (YYYY-MM-DD).
+            end_date: End date (YYYY-MM-DD).
+
+        Returns:
+            Dict with 'results' list of daily aggregated entries.
+        """
+        return self._request(
+            "GET",
+            "/user/daily/activity/aggregated",
+            params={"start_date": start_date, "end_date": end_date},
+        )
+
     def list_keys(self) -> list[VirtualKey]:
         """List all virtual keys.
 

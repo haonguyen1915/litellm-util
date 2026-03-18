@@ -12,6 +12,7 @@ from llm_cli.ui.console import console
 from llm_cli.ui.tables import (
     print_daily_activity_table,
     print_global_spend_keys_table,
+    print_global_spend_teams_table,
     print_spend_by_key_table,
     print_spend_by_model_table,
     print_spend_by_team_table,
@@ -21,7 +22,15 @@ from llm_cli.ui.tables import (
 
 app = typer.Typer(no_args_is_help=True)
 
-LAST_CHOICES = {"1h": "1h", "1d": "1d", "1w": "1w", "1m": "1m"}
+LAST_CHOICES = {
+    "1h": timedelta(hours=1),
+    "1d": timedelta(days=1),
+    "7d": timedelta(days=7),
+    "15d": timedelta(days=15),
+    "30d": timedelta(days=30),
+}
+
+LAST_HELP = "Time range: 1h, 1d, 7d, 15d, 30d"
 
 
 def _get_client(org: str | None, env: str | None) -> LiteLLMClient:
@@ -49,22 +58,17 @@ def _resolve_dates(
     """Resolve start/end dates from explicit values or --last shortcut.
 
     --last takes precedence over --start/--end when provided.
-    Accepted values: 1h, 1d, 1w, 1m.
+    Accepted values: 1h, 1d, 7d, 15d, 30d.
     """
     if last:
         now = datetime.now()
         end_date = now.strftime("%Y-%m-%d")
-        if last == "1h":
-            start_dt = now - timedelta(hours=1)
-        elif last == "1d":
-            start_dt = now - timedelta(days=1)
-        elif last == "1w":
-            start_dt = now - timedelta(weeks=1)
-        elif last == "1m":
-            start_dt = now - timedelta(days=30)
-        else:
-            error(f"Invalid --last value: {last}. Use 1h, 1d, 1w, or 1m.")
+        delta = LAST_CHOICES.get(last)
+        if delta is None:
+            valid = ", ".join(LAST_CHOICES.keys())
+            error(f"Invalid --last value: {last}. Use {valid}.")
             raise typer.Exit(2)
+        start_dt = now - delta
         start_date = start_dt.strftime("%Y-%m-%d")
         return start_date, end_date
 
@@ -75,7 +79,7 @@ def _resolve_dates(
 def summary(
     start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD)"),
     end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD)"),
-    last: Optional[str] = typer.Option(None, "--last", "-l", help="Time range: 1h, 1d, 1w, 1m"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=LAST_HELP),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
@@ -84,7 +88,7 @@ def summary(
 
     Examples:
         llm usage summary
-        llm usage summary --last 1w
+        llm usage summary --last 7d
         llm usage summary --start 2025-03-01 --end 2025-03-17
         llm usage summary --top 5
     """
@@ -115,18 +119,24 @@ def summary(
 
 @app.command("by-key")
 def by_key(
-    all_keys: bool = typer.Option(False, "--all", "-a", help="Include deleted and internal keys"),
+    all_keys: bool = typer.Option(False, "--all", "-a", help="Include deleted and internal keys (supports date filtering)"),
+    start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD), requires --all"),
+    end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD), requires --all"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=f"{LAST_HELP} (requires --all)"),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
 ) -> None:
     """Spend grouped by API key.
 
-    By default shows active keys only. Use --all to include deleted/internal keys.
+    By default shows active keys with cumulative spend.
+    Use --all to include deleted/internal keys with date filtering.
 
     Examples:
         llm usage by-key
         llm usage by-key --all
+        llm usage by-key --all --last 7d
+        llm usage by-key --all --start 2025-03-01 --end 2025-03-17
         llm usage by-key --top 5
     """
     client = _get_client(org, env)
@@ -134,8 +144,14 @@ def by_key(
 
     try:
         if all_keys:
-            data = client.get_global_spend_keys()
-            print_global_spend_keys_table(data, context_name=context_name, top_n=top)
+            start_date, end_date = _resolve_dates(start, end, last)
+            data = client.get_aggregated_activity(
+                start_date=start_date, end_date=end_date
+            )
+            print_global_spend_keys_table(
+                data, context_name=context_name,
+                start_date=start_date, end_date=end_date, top_n=top,
+            )
         else:
             keys = client.list_keys()
             print_spend_by_key_table(keys, context_name=context_name, top_n=top)
@@ -153,24 +169,41 @@ def by_key(
 
 @app.command("by-team")
 def by_team(
+    start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD)"),
+    end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD)"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=LAST_HELP),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
 ) -> None:
     """Spend grouped by team.
 
-    Shows total spend per team from the proxy. Spend is cumulative (not date-filtered).
+    By default shows cumulative spend per team.
+    Use --last or --start/--end to filter by date range.
 
     Examples:
         llm usage by-team
+        llm usage by-team --last 7d
+        llm usage by-team --start 2025-03-01 --end 2025-03-17
         llm usage by-team --top 5
     """
     client = _get_client(org, env)
     context_name = f"{client.context.organization_id}/{client.context.environment}"
+    has_date_filter = start or end or last
 
     try:
-        teams = client.list_teams()
-        print_spend_by_team_table(teams, context_name=context_name, top_n=top)
+        if has_date_filter:
+            start_date, end_date = _resolve_dates(start, end, last)
+            data = client.get_team_daily_activity(
+                start_date=start_date, end_date=end_date,
+            )
+            print_global_spend_teams_table(
+                data, context_name=context_name,
+                start_date=start_date, end_date=end_date, top_n=top,
+            )
+        else:
+            teams = client.list_teams()
+            print_spend_by_team_table(teams, context_name=context_name, top_n=top)
     except ConnectionError:
         error("Cannot connect to LiteLLM Proxy")
         console.print(f"  URL: {client.base_url}", style="dim")
@@ -187,7 +220,7 @@ def by_team(
 def by_model(
     start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD)"),
     end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD)"),
-    last: Optional[str] = typer.Option(None, "--last", "-l", help="Time range: 1h, 1d, 1w, 1m"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=LAST_HELP),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
@@ -196,7 +229,7 @@ def by_model(
 
     Examples:
         llm usage by-model
-        llm usage by-model --last 1m
+        llm usage by-model --last 30d
         llm usage by-model --start 2025-01-01 --end 2025-03-17
         llm usage by-model --top 10
     """
@@ -235,7 +268,7 @@ def activity(
     scope: str = typer.Option("user", "--scope", help="Scope: 'user' or 'team'"),
     start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD)"),
     end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD)"),
-    last: Optional[str] = typer.Option(None, "--last", "-l", help="Time range: 1h, 1d, 1w, 1m"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=LAST_HELP),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
 ) -> None:
@@ -243,7 +276,7 @@ def activity(
 
     Examples:
         llm usage activity
-        llm usage activity --last 1w
+        llm usage activity --last 7d
         llm usage activity --scope team
         llm usage activity --scope team --start 2025-03-01
     """
@@ -288,7 +321,7 @@ def activity(
 def logs(
     start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD)"),
     end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD)"),
-    last: Optional[str] = typer.Option(None, "--last", "-l", help="Time range: 1h, 1d, 1w, 1m"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=LAST_HELP),
     request_id: Optional[str] = typer.Option(None, "--request-id", "-r", help="Filter by request ID"),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),

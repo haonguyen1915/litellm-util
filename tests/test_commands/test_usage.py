@@ -166,15 +166,15 @@ class TestSummary:
         assert "1 tags" in result.output.lower()
 
     @patch("llm_cli.commands.usage.LiteLLMClient")
-    def test_summary_last_1w(self, mock_cls):
+    def test_summary_last_7d(self, mock_cls):
         client = _mock_client()
         client.get_tag_summary.return_value = SAMPLE_TAG_SUMMARY
         mock_cls.return_value = client
 
-        result = runner.invoke(app, ["usage", "summary", "--last", "1w"])
+        result = runner.invoke(app, ["usage", "summary", "--last", "7d"])
         assert result.exit_code == 0
         call_kwargs = client.get_tag_summary.call_args[1]
-        expected_start = (datetime.now() - timedelta(weeks=1)).strftime("%Y-%m-%d")
+        expected_start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         assert call_kwargs["start_date"] == expected_start
         assert call_kwargs["end_date"] == datetime.now().strftime("%Y-%m-%d")
 
@@ -245,13 +245,43 @@ class TestByKey:
 
     @patch("llm_cli.commands.usage.LiteLLMClient")
     def test_by_key_all(self, mock_cls):
-        """--all uses /global/spend/keys endpoint."""
+        """--all uses /user/daily/activity/aggregated endpoint."""
         client = _mock_client()
-        client.get_global_spend_keys.return_value = [
-            {"api_key": "d66b4c1aaa", "key_alias": None, "total_spend": 189.38},
-            {"api_key": "14c3b03bbb", "key_alias": "LA-DEV", "total_spend": 2.44},
-            {"api_key": "litellm-internal-health-check", "key_alias": None, "total_spend": 0.31},
-        ]
+        client.get_aggregated_activity.return_value = {
+            "results": [
+                {
+                    "date": "2025-03-16",
+                    "breakdown": {
+                        "models": {
+                            "gpt-4": {
+                                "api_key_breakdown": {
+                                    "d66b4c1aaa": {
+                                        "metrics": {"spend": 100.0},
+                                        "metadata": {"key_alias": None},
+                                    },
+                                    "14c3b03bbb": {
+                                        "metrics": {"spend": 2.0},
+                                        "metadata": {"key_alias": "LA-DEV"},
+                                    },
+                                }
+                            },
+                            "claude-3": {
+                                "api_key_breakdown": {
+                                    "d66b4c1aaa": {
+                                        "metrics": {"spend": 89.38},
+                                        "metadata": {"key_alias": None},
+                                    },
+                                    "litellm-health": {
+                                        "metrics": {"spend": 0.31},
+                                        "metadata": {"key_alias": None},
+                                    },
+                                }
+                            },
+                        }
+                    },
+                }
+            ]
+        }
         mock_cls.return_value = client
 
         result = runner.invoke(app, ["usage", "by-key", "--all"])
@@ -259,17 +289,30 @@ class TestByKey:
         assert "all" in result.output.lower()
         assert "LA-DEV" in result.output
         assert "litellm" in result.output
-        client.get_global_spend_keys.assert_called_once()
+        client.get_aggregated_activity.assert_called_once()
         client.list_keys.assert_not_called()
 
     @patch("llm_cli.commands.usage.LiteLLMClient")
     def test_by_key_all_top_n(self, mock_cls):
         client = _mock_client()
-        client.get_global_spend_keys.return_value = [
-            {"api_key": "key-aaa", "key_alias": None, "total_spend": 100.0},
-            {"api_key": "key-bbb", "key_alias": "dev", "total_spend": 50.0},
-            {"api_key": "key-ccc", "key_alias": None, "total_spend": 10.0},
-        ]
+        client.get_aggregated_activity.return_value = {
+            "results": [
+                {
+                    "date": "2025-03-16",
+                    "breakdown": {
+                        "models": {
+                            "gpt-4": {
+                                "api_key_breakdown": {
+                                    "key-aaa": {"metrics": {"spend": 100.0}, "metadata": {}},
+                                    "key-bbb": {"metrics": {"spend": 50.0}, "metadata": {"key_alias": "dev"}},
+                                    "key-ccc": {"metrics": {"spend": 10.0}, "metadata": {}},
+                                }
+                            }
+                        }
+                    },
+                }
+            ]
+        }
         mock_cls.return_value = client
 
         result = runner.invoke(app, ["usage", "by-key", "--all", "--top", "2"])
@@ -311,6 +354,103 @@ class TestByTeam:
         assert result.exit_code == 0
         assert "Engineering" in result.output
 
+    @patch("llm_cli.commands.usage.LiteLLMClient")
+    def test_by_team_with_last(self, mock_cls):
+        """--last triggers /team/daily/activity and aggregation."""
+        client = _mock_client()
+        client.get_team_daily_activity.return_value = {
+            "results": [
+                {
+                    "date": "2025-03-16",
+                    "breakdown": {
+                        "entities": {
+                            "team-eng": {
+                                "metrics": {"spend": 5.0, "api_requests": 10},
+                                "metadata": {"team_alias": "Engineering"},
+                            },
+                            "team-mkt": {
+                                "metrics": {"spend": 2.0, "api_requests": 5},
+                                "metadata": {"team_alias": "Marketing"},
+                            },
+                        }
+                    },
+                },
+                {
+                    "date": "2025-03-15",
+                    "breakdown": {
+                        "entities": {
+                            "team-eng": {
+                                "metrics": {"spend": 3.0, "api_requests": 8},
+                                "metadata": {"team_alias": "Engineering"},
+                            },
+                        }
+                    },
+                },
+            ]
+        }
+        mock_cls.return_value = client
+
+        result = runner.invoke(app, ["usage", "by-team", "--last", "7d"])
+        assert result.exit_code == 0
+        assert "Spend by Team" in result.output
+        assert "team-eng" in result.output
+        assert "team-mkt" in result.output
+        assert "Engineering" in result.output
+        client.get_team_daily_activity.assert_called_once()
+        client.list_teams.assert_not_called()
+
+    @patch("llm_cli.commands.usage.LiteLLMClient")
+    def test_by_team_with_dates(self, mock_cls):
+        """--start/--end triggers /team/daily/activity."""
+        client = _mock_client()
+        client.get_team_daily_activity.return_value = {
+            "results": [
+                {
+                    "date": "2025-03-16",
+                    "breakdown": {
+                        "entities": {
+                            "team-eng": {
+                                "metrics": {"spend": 10.0, "api_requests": 20},
+                                "metadata": {"team_alias": "Engineering"},
+                            },
+                        }
+                    },
+                }
+            ]
+        }
+        mock_cls.return_value = client
+
+        result = runner.invoke(
+            app, ["usage", "by-team", "--start", "2025-03-01", "--end", "2025-03-17"]
+        )
+        assert result.exit_code == 0
+        client.get_team_daily_activity.assert_called_once_with(
+            start_date="2025-03-01", end_date="2025-03-17",
+        )
+
+    @patch("llm_cli.commands.usage.LiteLLMClient")
+    def test_by_team_with_last_top_n(self, mock_cls):
+        client = _mock_client()
+        client.get_team_daily_activity.return_value = {
+            "results": [
+                {
+                    "date": "2025-03-16",
+                    "breakdown": {
+                        "entities": {
+                            "team-a": {"metrics": {"spend": 50.0, "api_requests": 100}, "metadata": {}},
+                            "team-b": {"metrics": {"spend": 30.0, "api_requests": 60}, "metadata": {}},
+                            "team-c": {"metrics": {"spend": 10.0, "api_requests": 20}, "metadata": {}},
+                        }
+                    },
+                }
+            ]
+        }
+        mock_cls.return_value = client
+
+        result = runner.invoke(app, ["usage", "by-team", "--last", "1d", "--top", "2"])
+        assert result.exit_code == 0
+        assert "2 teams" in result.output.lower()
+
 
 class TestByModel:
     @patch("llm_cli.commands.usage.LiteLLMClient")
@@ -337,15 +477,15 @@ class TestByModel:
         assert "0 models" in result.output.lower()
 
     @patch("llm_cli.commands.usage.LiteLLMClient")
-    def test_by_model_last_1w(self, mock_cls):
+    def test_by_model_last_7d(self, mock_cls):
         client = _mock_client()
         client.get_spend_logs.return_value = SAMPLE_SPEND_LOGS
         mock_cls.return_value = client
 
-        result = runner.invoke(app, ["usage", "by-model", "--last", "1w"])
+        result = runner.invoke(app, ["usage", "by-model", "--last", "7d"])
         assert result.exit_code == 0
         call_kwargs = client.get_spend_logs.call_args[1]
-        expected_start = (datetime.now() - timedelta(weeks=1)).strftime("%Y-%m-%d")
+        expected_start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         assert call_kwargs["start_date"] == expected_start
 
 
