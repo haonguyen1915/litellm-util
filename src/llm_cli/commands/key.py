@@ -39,6 +39,15 @@ def list_keys(
 
     try:
         keys = client.list_keys()
+        # Enrich keys with team aliases from /team/list
+        try:
+            teams = client.list_teams()
+            alias_map = {t.team_id: t.team_alias for t in teams if t.team_alias}
+            for k in keys:
+                if k.team_id and not k.team_alias:
+                    k.team_alias = alias_map.get(k.team_id)
+        except Exception:
+            pass  # Continue without team aliases
         print_keys_table(keys, context_name)
     except ConnectionError:
         error("Cannot connect to LiteLLM Proxy")
@@ -264,7 +273,7 @@ def update_key(
         print_keys_table(keys, context_name)
 
         key_choices = [
-            f"{k.key_alias or k.key_name or '-'} ({k.masked_key})" for k in keys
+            f"{k.key_alias or k.masked_key} ({k.masked_key})" for k in keys
         ]
         console.print("\n[dim]Type to search keys (tab to complete):[/dim]")
         selection = fuzzy_select("Update key:", key_choices)
@@ -291,11 +300,11 @@ def update_key(
         error("Key not found")
         raise typer.Exit(5)
 
-    display_name = selected_key.key_alias or selected_key.key_name or selected_key.masked_key
+    display_name = selected_key.key_alias or selected_key.masked_key
 
     # Show current info
     console.print("\nCurrent key info:")
-    print_detail("Alias", selected_key.key_alias or selected_key.key_name or "-")
+    print_detail("Alias", selected_key.key_alias or "-")
     print_detail("Key", selected_key.masked_key)
     print_detail("Team", selected_key.team_id or "-")
     console.print()
@@ -402,7 +411,7 @@ def delete_key(
 
         # Fuzzy select key
         key_choices = [
-            f"{k.key_alias or k.key_name or '-'} ({k.masked_key})" for k in keys
+            f"{k.key_alias or k.masked_key} ({k.masked_key})" for k in keys
         ]
         console.print("\n[dim]Type to search keys (tab to complete):[/dim]")
         selection = fuzzy_select("Delete key:", key_choices)
@@ -429,7 +438,7 @@ def delete_key(
         raise typer.Exit(5)
 
     # Confirm deletion
-    display_name = selected_key.key_alias or selected_key.key_name or selected_key.masked_key
+    display_name = selected_key.key_alias or selected_key.masked_key
     if not yes:
         if not confirm(f"Are you sure you want to delete '{display_name}'?"):
             raise typer.Exit(1)

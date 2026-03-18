@@ -174,8 +174,8 @@ def print_keys_table(keys: list[VirtualKey], context_name: str = "") -> None:
     table.add_column("Expires", style="yellow")
 
     for i, key in enumerate(keys, 1):
-        alias = key.key_alias or key.key_name or "-"
-        team = key.team_id or "-"
+        alias = key.key_alias or "-"
+        team = key.team_alias or key.team_id or "-"
 
         if key.max_budget:
             duration = key.budget_duration or "month"
@@ -433,8 +433,8 @@ def print_spend_by_key_table(
 
     total_spend = 0.0
     for i, key in enumerate(keys_sorted, 1):
-        alias = key.key_alias or key.key_name or "-"
-        team = key.team_id or "-"
+        alias = key.key_alias or "-"
+        team = key.team_alias or key.team_id or "-"
         if key.max_budget:
             duration = key.budget_duration or "month"
             budget = f"${key.max_budget:.0f}/{duration}"
