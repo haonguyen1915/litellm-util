@@ -42,8 +42,8 @@ exclude_types = ["chore", "ci"]
 
 [release.auto_gen_notes]
 # AI-powered release notes generation
-enabled = false
-include_diff = false
+enabled = true
+include_diff = true
 always_diff_types = ["feat"]
 max_commits = 200
 mode = "auto"
@@ -52,9 +52,9 @@ mode = "auto"
 # --- LLM Configuration ---
 [llm-config]
 # Advanced LLM configuration for release notes and commit message generation
-enabled = false
+enabled = true
 provider = "openai"
-model = "gpt-4o-mini"
+model = "gpt-4o"
 api_key_env = "OPENAI_API_KEY"
 temperature = 0.2
 max_tokens = 2500
