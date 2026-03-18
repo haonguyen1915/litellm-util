@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.2] - 2026-03-18
+
+### Release Notes
+
+Minor maintenance update with no user-facing changes.
+
+### What's Changed
+- Updated API key for improved backend integration.
+
+**Contributors:** @haonguyen
+
+**Compare changes:** [v0.2.1...v0.2.2](https://github.com/haonguyen1915/litellm-util.git/-/compare/v0.2.1...v0.2.2)
+
 ## [0.2.1] - 2026-03-18
 
 ### Release Notes
