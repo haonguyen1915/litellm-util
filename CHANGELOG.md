@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.3] - 2026-03-20
+
+### Release Notes
+
+### What's Changed
+- Fixed issue with team daily activity reporting by ensuring all pages are fetched, preventing data underreporting.
+
+### Bug Fixes
+
+- fix: fetch all pages in team daily activity to prevent underreporting (c6cb359)
+
+**Contributors:** @haonguyen
+
+**Compare changes:** [v0.2.2...v0.2.3](https://github.com/haonguyen1915/litellm-util.git/-/compare/v0.2.2...v0.2.3)
+
 ## [0.2.2] - 2026-03-18
 
 ### Release Notes
