@@ -65,6 +65,8 @@ def create_model(
     model_id: Optional[str] = typer.Option(None, "--model", "-m", help="Model ID"),
     alias: Optional[str] = typer.Option(None, "--alias", "-a", help="Model alias/display name"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="API key"),
+    input_cost: Optional[float] = typer.Option(None, "--input-cost", help="Input price per 1M tokens ($)"),
+    output_cost: Optional[float] = typer.Option(None, "--output-cost", help="Output price per 1M tokens ($)"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
@@ -73,6 +75,7 @@ def create_model(
     Examples:
         llm model create                                                    # Interactive
         llm model create -p openai -m gpt-4o -a my-gpt4o -k sk-xxx
+        llm model create -p openai -m gpt-4o -a my-gpt4o -k sk-xxx --input-cost 2.50 --output-cost 10.00
         llm model create -p anthropic -m claude-sonnet-4-20250514 -a claude-sonnet -k sk-ant-xxx
         llm model create -p azure -m gpt-4o -a azure-gpt4o -k xxx
         llm model create -p gemini -m gemini-2.5-pro -a gemini-pro -k AIza-xxx
@@ -80,16 +83,35 @@ def create_model(
     """
     # If all required params provided, run non-interactively
     if provider_name and model_id and alias:
-        _create_model_non_interactive(provider_name, model_id, alias, api_key, org, env)
+        _create_model_non_interactive(
+            provider_name, model_id, alias, api_key, input_cost, output_cost, org, env,
+        )
     else:
         create_model_interactive(
             prefill_provider=provider_name,
             prefill_model=model_id,
             prefill_alias=alias,
             prefill_api_key=api_key,
+            prefill_input_cost=input_cost,
+            prefill_output_cost=output_cost,
             org_override=org,
             env_override=env,
         )
+
+
+def _build_model_info(
+    input_cost: float | None,
+    output_cost: float | None,
+) -> dict | None:
+    """Build model_info dict from per-1M-token prices."""
+    if input_cost is None and output_cost is None:
+        return None
+    info: dict = {}
+    if input_cost is not None:
+        info["input_cost_per_token"] = input_cost / 1_000_000
+    if output_cost is not None:
+        info["output_cost_per_token"] = output_cost / 1_000_000
+    return info
 
 
 def create_model_interactive(
@@ -97,6 +119,8 @@ def create_model_interactive(
     prefill_model: str | None = None,
     prefill_alias: str | None = None,
     prefill_api_key: str | None = None,
+    prefill_input_cost: float | None = None,
+    prefill_output_cost: float | None = None,
     org_override: str | None = None,
     env_override: str | None = None,
 ) -> None:
@@ -235,15 +259,38 @@ def create_model_interactive(
                 warning("Creating model without successful test")
                 console.print()
 
+    # Pricing — prompt if not prefilled
+    input_cost = prefill_input_cost
+    output_cost = prefill_output_cost
+    if input_cost is None and output_cost is None:
+        if confirm("Set custom pricing? (default: No)", default=False):
+            ic = text_input("Input price per 1M tokens ($):")
+            oc = text_input("Output price per 1M tokens ($):")
+            try:
+                input_cost = float(ic) if ic else None
+            except ValueError:
+                pass
+            try:
+                output_cost = float(oc) if oc else None
+            except ValueError:
+                pass
+
+    model_info = _build_model_info(input_cost, output_cost)
+
     # Create model
     try:
         client.create_model(
             model_name=alias,
             litellm_params=litellm_params,
+            model_info=model_info,
         )
         success(f"Model '{alias}' created successfully")
         print_detail("Provider", provider.id)
         print_detail("Model", full_model_id)
+        if input_cost is not None:
+            print_detail("Input cost", f"${input_cost}/1M tokens")
+        if output_cost is not None:
+            print_detail("Output cost", f"${output_cost}/1M tokens")
     except ConnectionError:
         error("Cannot connect to LiteLLM Proxy")
         raise typer.Exit(3)
@@ -260,6 +307,8 @@ def _create_model_non_interactive(
     model_id: str,
     alias: str,
     api_key: str | None,
+    input_cost: float | None,
+    output_cost: float | None,
     org: str | None,
     env: str | None,
 ) -> None:
@@ -319,12 +368,19 @@ def _create_model_non_interactive(
                 error("Max retries reached")
                 raise typer.Exit(6)
 
+    model_info = _build_model_info(input_cost, output_cost)
+
     try:
         client.create_model(
             model_name=alias,
             litellm_params=litellm_params,
+            model_info=model_info,
         )
         success(f"Model '{alias}' created successfully")
+        if input_cost is not None:
+            print_detail("Input cost", f"${input_cost}/1M tokens")
+        if output_cost is not None:
+            print_detail("Output cost", f"${output_cost}/1M tokens")
     except ConnectionError:
         error("Cannot connect to LiteLLM Proxy")
         raise typer.Exit(3)

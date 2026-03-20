@@ -11,6 +11,7 @@ from llm_cli.ui import error
 from llm_cli.ui.console import console
 from llm_cli.ui.tables import (
     print_daily_activity_table,
+    print_global_spend_keys_fallback_table,
     print_global_spend_keys_table,
     print_global_spend_teams_table,
     print_spend_by_key_table,
@@ -119,10 +120,9 @@ def summary(
 
 @app.command("by-key")
 def by_key(
-    all_keys: bool = typer.Option(False, "--all", "-a", help="Include deleted and internal keys (supports date filtering)"),
-    start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD), requires --all"),
-    end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD), requires --all"),
-    last: Optional[str] = typer.Option(None, "--last", "-l", help=f"{LAST_HELP} (requires --all)"),
+    start: Optional[str] = typer.Option(None, "--start", "-s", help="Start date (YYYY-MM-DD)"),
+    end: Optional[str] = typer.Option(None, "--end", help="End date (YYYY-MM-DD)"),
+    last: Optional[str] = typer.Option(None, "--last", "-l", help=LAST_HELP),
     top: int = typer.Option(0, "--top", "-t", help="Show top N results"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", help="Override environment"),
@@ -130,28 +130,33 @@ def by_key(
     """Spend grouped by API key.
 
     By default shows active keys with cumulative spend.
-    Use --all to include deleted/internal keys with date filtering.
+    Use --last or --start/--end to filter by date range.
 
     Examples:
         llm usage by-key
-        llm usage by-key --all
-        llm usage by-key --all --last 7d
-        llm usage by-key --all --start 2025-03-01 --end 2025-03-17
+        llm usage by-key --last 7d
+        llm usage by-key --start 2025-03-01 --end 2025-03-17
         llm usage by-key --top 5
     """
     client = _get_client(org, env)
     context_name = f"{client.context.organization_id}/{client.context.environment}"
+    has_date_filter = start or end or last
 
     try:
-        if all_keys:
+        if has_date_filter:
             start_date, end_date = _resolve_dates(start, end, last)
-            data = client.get_aggregated_activity(
+            data, source = client.get_all_keys_spend(
                 start_date=start_date, end_date=end_date
             )
-            print_global_spend_keys_table(
-                data, context_name=context_name,
-                start_date=start_date, end_date=end_date, top_n=top,
-            )
+            if source == "aggregated":
+                print_global_spend_keys_table(
+                    data, context_name=context_name,
+                    start_date=start_date, end_date=end_date, top_n=top,
+                )
+            else:
+                print_global_spend_keys_fallback_table(
+                    data, context_name=context_name, top_n=top,
+                )
         else:
             keys = client.list_keys()
             print_spend_by_key_table(keys, context_name=context_name, top_n=top)

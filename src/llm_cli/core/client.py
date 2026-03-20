@@ -397,6 +397,33 @@ class LiteLLMClient:
             params={"start_date": start_date, "end_date": end_date},
         )
 
+    def get_all_keys_spend(
+        self,
+        start_date: str,
+        end_date: str,
+    ) -> tuple[dict | list, str]:
+        """Get spend data for all keys, with automatic endpoint fallback.
+
+        Tries /user/daily/activity/aggregated first (date-filtered, per-key
+        breakdown). If the proxy returns 404 (older LiteLLM versions), falls
+        back to /global/spend/keys (total spend only, no date filtering).
+
+        Args:
+            start_date: Start date (YYYY-MM-DD).
+            end_date: End date (YYYY-MM-DD).
+
+        Returns:
+            Tuple of (data, source) where source is 'aggregated' or 'global'.
+        """
+        try:
+            data = self.get_aggregated_activity(start_date, end_date)
+            return data, "aggregated"
+        except APIError as e:
+            if e.status_code == 404:
+                data = self.get_global_spend_keys()
+                return data, "global"
+            raise
+
     def list_keys(self) -> list[VirtualKey]:
         """List all virtual keys.
 

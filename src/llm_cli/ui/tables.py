@@ -131,6 +131,16 @@ def print_model_details(model: ModelInfo) -> None:
     console.print(table)
 
 
+def _format_price(cost_per_token: float | None) -> str:
+    """Format cost-per-token as $/1M tokens."""
+    if not cost_per_token:
+        return "-"
+    price = cost_per_token * 1_000_000
+    if price >= 1:
+        return f"${price:.2f}"
+    return f"${price:.4f}"
+
+
 def print_proxy_models_table(models: list[dict], context_name: str = "") -> None:
     """Print models from LiteLLM Proxy."""
     title = f"Models on {context_name}" if context_name else "Models"
@@ -144,13 +154,18 @@ def print_proxy_models_table(models: list[dict], context_name: str = "") -> None
     table.add_column("Model Name", style="white")
     table.add_column("Provider", style="green")
     table.add_column("LiteLLM Model", style="blue")
+    table.add_column("Input $/1M", style="cyan", justify="right")
+    table.add_column("Output $/1M", style="yellow", justify="right")
 
     for i, model in enumerate(models, 1):
+        info = model.get("model_info", {}) or {}
         table.add_row(
             str(i),
             model.get("model_name", ""),
             model.get("litellm_params", {}).get("model", "").split("/")[0],
             model.get("litellm_params", {}).get("model", ""),
+            _format_price(info.get("input_cost_per_token")),
+            _format_price(info.get("output_cost_per_token")),
         )
 
     console.print(table)
@@ -219,9 +234,7 @@ def print_teams_table(teams: list[Team], context_name: str = "") -> None:
             budget = "Unlimited"
 
         if team.models:
-            models = ", ".join(team.models[:3])
-            if len(team.models) > 3:
-                models += f" (+{len(team.models) - 3})"
+            models = ", ".join(team.models)
         else:
             models = "All models"
 
@@ -528,6 +541,61 @@ def print_global_spend_keys_table(
     console.print(
         f"\nTotal: {len(sorted_keys)} API keys | Combined spend: {_format_spend(total_spend)}",
         style="dim",
+    )
+
+
+def print_global_spend_keys_fallback_table(
+    data: list[dict],
+    context_name: str = "",
+    top_n: int = 0,
+) -> None:
+    """Print all keys with spend from /global/spend/keys (fallback).
+
+    Used when the proxy doesn't support /user/daily/activity/aggregated.
+    Data format: list of {api_key, key_alias, key_name, total_spend}.
+    Note: total_spend is cumulative (not date-filtered).
+    """
+    sorted_keys = sorted(data, key=lambda x: x.get("total_spend", 0), reverse=True)
+    if top_n > 0:
+        sorted_keys = sorted_keys[:top_n]
+
+    title = "Spend by API Key (all, cumulative)"
+    if context_name:
+        title += f" on {context_name}"
+
+    table = Table(title=title, show_header=True, header_style="bold cyan")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Key", style="dim")
+    table.add_column("Alias", style="white")
+    table.add_column("Spend", style="green", justify="right")
+
+    total_spend = 0.0
+    for i, entry in enumerate(sorted_keys, 1):
+        api_key = entry.get("api_key", "")
+        if len(api_key) > 10:
+            key_display = f"{api_key[:7]}...{api_key[-6:]}"
+        else:
+            key_display = api_key
+
+        alias = entry.get("key_alias") or entry.get("key_name") or "-"
+        spend = entry.get("total_spend", 0.0)
+
+        table.add_row(
+            str(i),
+            key_display,
+            alias,
+            _format_spend(spend),
+        )
+        total_spend += spend
+
+    console.print(table)
+    console.print(
+        f"\nTotal: {len(sorted_keys)} API keys | Combined spend: {_format_spend(total_spend)}",
+        style="dim",
+    )
+    console.print(
+        "Note: Showing cumulative spend (date filtering not supported by this proxy version)",
+        style="dim yellow",
     )
 
 
