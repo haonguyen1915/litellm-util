@@ -793,30 +793,48 @@ class LiteLLMClient:
         self,
         start_date: str,
         end_date: str,
-        page: int = 1,
-        page_size: int = 50,
+        page_size: int = 100,
     ) -> list | dict:
-        """Get daily activity for teams.
+        """Get daily activity for teams (all pages).
+
+        Fetches all pages from /team/daily/activity and merges
+        the results into a single response.
 
         Args:
             start_date: Start date (YYYY-MM-DD).
             end_date: End date (YYYY-MM-DD).
-            page: Page number for pagination.
             page_size: Items per page.
 
         Returns:
-            List of daily activity entries.
+            Dict with merged results from all pages.
         """
-        return self._request(
-            "GET",
-            "/team/daily/activity",
-            params={
-                "start_date": start_date,
-                "end_date": end_date,
-                "page": page,
-                "page_size": page_size,
-            },
-        )
+        all_results: list = []
+        page = 1
+
+        while True:
+            data = self._request(
+                "GET",
+                "/team/daily/activity",
+                params={
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "page": page,
+                    "page_size": page_size,
+                },
+            )
+
+            if isinstance(data, dict):
+                all_results.extend(data.get("results", []))
+                metadata = data.get("metadata", {})
+                if not metadata.get("has_more", False):
+                    break
+            else:
+                all_results.extend(data)
+                break
+
+            page += 1
+
+        return {"results": all_results}
 
     def get_spend_logs(
         self,
