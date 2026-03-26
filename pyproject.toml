@@ -7,7 +7,7 @@ license = "GPL-3.0-or-later"
 packages = [{include = "llm_cli", from = "src"}]
 
 [tool.poetry.scripts]
-llm = "llm_cli.main:app"
+llm = "llm_cli.main:main"
 
 [tool.poetry.dependencies]
 python = "^3.10"

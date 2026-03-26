@@ -47,5 +47,13 @@ app.command(name="init", help="Initialize or add new organization/environment")(
 app.command(name="history", help="Show command history")(history.history_command)
 
 
+def main() -> None:
+    """CLI entry point with Ctrl+C handling."""
+    try:
+        app()
+    except KeyboardInterrupt:
+        sys.exit(130)
+
+
 if __name__ == "__main__":
-    app()
+    main()
