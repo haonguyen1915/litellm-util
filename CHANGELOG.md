@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.4] - 2026-03-26
+
+### Release Notes
+
+Enhanced key management with model support.
+
+### What's Changed
+- Added support for specifying models in key management, allowing restriction to specific models or all team models.
+
+### Features
+
+- feat: support add model for key (741807c)
+
+**Contributors:** @haonguyen
+
+**Compare changes:** [v0.2.3...v0.2.4](https://github.com/haonguyen1915/litellm-util.git/-/compare/v0.2.3...v0.2.4)
+
 ## [0.2.3] - 2026-03-20
 
 ### Release Notes
