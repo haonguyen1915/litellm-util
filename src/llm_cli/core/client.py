@@ -498,6 +498,7 @@ class LiteLLMClient:
         key: str,
         key_alias: str | None = None,
         team_id: str | None = None,
+        models: list[str] | None = None,
     ) -> dict[str, Any]:
         """Update a virtual key.
 
@@ -505,6 +506,7 @@ class LiteLLMClient:
             key: The key token to update.
             key_alias: New alias/name.
             team_id: New team ID.
+            models: List of allowed models (use ["all-team-models"] for all).
 
         Returns:
             Updated key info.
@@ -515,6 +517,8 @@ class LiteLLMClient:
             data["key_alias"] = key_alias
         if team_id is not None:
             data["team_id"] = team_id
+        if models is not None:
+            data["models"] = models
 
         return self._request("POST", "/key/update", json=data)
 

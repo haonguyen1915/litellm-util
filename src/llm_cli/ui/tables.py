@@ -185,12 +185,14 @@ def print_keys_table(keys: list[VirtualKey], context_name: str = "") -> None:
     table.add_column("Key Alias", style="white")
     table.add_column("Key (masked)", style="dim")
     table.add_column("Team", style="green")
+    table.add_column("Models", style="blue")
     table.add_column("Budget", style="cyan", justify="right")
     table.add_column("Expires", style="yellow")
 
     for i, key in enumerate(keys, 1):
         alias = key.key_alias or "-"
         team = key.team_alias or key.team_id or "-"
+        models = ", ".join(key.models) if key.models else "All models"
 
         if key.max_budget:
             duration = key.budget_duration or "month"
@@ -203,7 +205,7 @@ def print_keys_table(keys: list[VirtualKey], context_name: str = "") -> None:
         else:
             expires = "Never"
 
-        table.add_row(str(i), alias, key.masked_key, team, budget, expires)
+        table.add_row(str(i), alias, key.masked_key, team, models, budget, expires)
 
     console.print(table)
     console.print(f"\nTotal: {len(keys)} keys", style="dim")

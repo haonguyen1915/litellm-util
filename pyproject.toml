@@ -35,7 +35,7 @@ pyyaml = "^6.0.1"
 pyperclip = "^1.8.2"
 
 # LiteLLM SDK (for model testing)
-litellm = ">=1.40.0"
+litellm = "1.82.1"
 python-dotenv = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]

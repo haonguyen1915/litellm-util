@@ -237,16 +237,21 @@ def update_key(
     key_alias: Optional[str] = typer.Argument(None, help="Key alias to update"),
     name: Optional[str] = typer.Option(None, "--name", "-n", help="New key alias/name"),
     team: Optional[str] = typer.Option(None, "--team", "-t", help="New team ID"),
+    models: Optional[str] = typer.Option(
+        None, "--models", "-m",
+        help="Comma-separated models, or 'all-team-models' for all team models",
+    ),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
-    """Update a virtual key (name, team).
+    """Update a virtual key (name, team, models).
 
     Examples:
         llm key update                              # Interactive
         llm key update my-key --name new-name       # Rename
         llm key update my-key --team TEAM_ID        # Change team
-        llm key update my-key -n new-name -t TEAM_ID
+        llm key update my-key -m all-team-models    # Allow all team models
+        llm key update my-key -m "gpt-4,claude-3"   # Restrict to specific models
     """
     client = _get_client(org, env)
 
@@ -303,15 +308,25 @@ def update_key(
     display_name = selected_key.key_alias or selected_key.masked_key
 
     # Show current info
+    current_models_display = ", ".join(selected_key.models) if selected_key.models else "All models"
     console.print("\nCurrent key info:")
     print_detail("Alias", selected_key.key_alias or "-")
     print_detail("Key", selected_key.masked_key)
     print_detail("Team", selected_key.team_id or "-")
+    print_detail("Models", current_models_display)
     console.print()
 
+    # Parse --models flag
+    model_list: list[str] | None = None
+    if models is not None:
+        if models.lower() == "all-team-models":
+            model_list = ["all-team-models"]
+        else:
+            model_list = [m.strip() for m in models.split(",") if m.strip()]
+
     # Interactive if no flags provided
-    if not any([name, team]):
-        update_choices = ["Update name", "Update team"]
+    if not any([name, team, model_list]):
+        update_choices = ["Update name", "Update team", "Update models"]
         selection = select_from_list("What would you like to update?", update_choices)
 
         if selection is None:
@@ -338,7 +353,51 @@ def update_key(
             except Exception:
                 team = text_input("Team ID:")
 
-    if not name and not team:
+        elif "models" in selection:
+            try:
+                proxy_models = client.list_models()
+                model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
+            except Exception:
+                model_names = []
+
+            choices = ["All Team Models"] + model_names
+            selected_models: list[str] = []
+
+            while True:
+                remaining = [c for c in choices if c not in selected_models]
+                if not remaining:
+                    break
+
+                if not selected_models:
+                    console.print("\n[dim]Select models (Enter = done):[/dim]")
+                else:
+                    console.print(f"\n[dim]Selected: {', '.join(selected_models)}[/dim]")
+                    console.print("[dim]Enter = Done | Type to add more:[/dim]")
+
+                pick = fuzzy_select("Model:", remaining)
+
+                if not pick:
+                    break
+
+                if pick == "All Team Models":
+                    selected_models = ["all-team-models"]
+                    break
+
+                if pick in remaining:
+                    selected_models.append(pick)
+                    continue
+
+                matches = [m for m in remaining if pick.lower() in m.lower()]
+                if len(matches) == 1:
+                    selected_models.append(matches[0])
+                    continue
+
+                break
+
+            if selected_models:
+                model_list = selected_models
+
+    if not name and not team and model_list is None:
         warning("Nothing to update")
         raise typer.Exit(1)
 
@@ -349,6 +408,9 @@ def update_key(
         print_detail("New Name", name)
     if team:
         print_detail("New Team", team)
+    if model_list is not None:
+        models_display = "All Team Models" if model_list == ["all-team-models"] else ", ".join(model_list)
+        print_detail("New Models", models_display)
     console.print()
 
     if not confirm("Apply update?", default=True):
@@ -359,12 +421,16 @@ def update_key(
             key=selected_key.token,
             key_alias=name,
             team_id=team,
+            models=model_list,
         )
         success(f"Key '{display_name}' updated")
         if name:
             print_detail("Name", name)
         if team:
             print_detail("Team", team)
+        if model_list is not None:
+            models_display = "All Team Models" if model_list == ["all-team-models"] else ", ".join(model_list)
+            print_detail("Models", models_display)
     except APIError as e:
         error(f"Failed to update key: {e.message}")
         raise typer.Exit(1)
