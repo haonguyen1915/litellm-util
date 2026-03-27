@@ -79,7 +79,7 @@ class LiteLLMClient:
         """
         if response.status_code == 401 or response.status_code == 403:
             raise AuthenticationError(
-                "Authentication failed. Master key may be invalid or expired."
+                f"Authentication failed (HTTP {response.status_code}). Master key may be invalid or expired."
             )
 
         if response.status_code >= 400:
