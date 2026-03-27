@@ -67,6 +67,7 @@ def create_model(
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="API key"),
     input_cost: Optional[float] = typer.Option(None, "--input-cost", help="Input price per 1M tokens ($)"),
     output_cost: Optional[float] = typer.Option(None, "--output-cost", help="Output price per 1M tokens ($)"),
+    replace: bool = typer.Option(False, "--replace", "-r", help="Replace existing model if it already exists"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
@@ -80,11 +81,13 @@ def create_model(
         llm model create -p azure -m gpt-4o -a azure-gpt4o -k xxx
         llm model create -p gemini -m gemini-2.5-pro -a gemini-pro -k AIza-xxx
         llm model create -p groq -m llama-3.3-70b-versatile -a llama70b -k gsk-xxx
+        llm model create --replace -p openai -m gpt-4o -a my-gpt4o -k sk-xxx  # Replace existing
     """
     # If all required params provided, run non-interactively
     if provider_name and model_id and alias:
         _create_model_non_interactive(
             provider_name, model_id, alias, api_key, input_cost, output_cost, org, env,
+            replace=replace,
         )
     else:
         create_model_interactive(
@@ -96,6 +99,7 @@ def create_model(
             prefill_output_cost=output_cost,
             org_override=org,
             env_override=env,
+            replace=replace,
         )
 
 
@@ -123,6 +127,7 @@ def create_model_interactive(
     prefill_output_cost: float | None = None,
     org_override: str | None = None,
     env_override: str | None = None,
+    replace: bool = False,
 ) -> None:
     """Interactive model creation flow."""
     client = _get_client(org_override, env_override)
@@ -190,13 +195,19 @@ def create_model_interactive(
         if not alias:
             alias = default_alias
     # Check duplicate model name on proxy
+    existing_model_id: str | None = None
     try:
         existing_models = client.list_models()
-        existing_names = {m.get("model_name", "") for m in existing_models}
-        if alias in existing_names:
-            warning(f"Model '{alias}' already exists on the proxy")
-            if not confirm("Continue creating anyway?", default=True):
-                raise typer.Exit(1)
+        for m in existing_models:
+            if m.get("model_name") == alias:
+                if replace:
+                    existing_model_id = m.get("model_info", {}).get("id")
+                    warning(f"Model '{alias}' exists, will be replaced")
+                else:
+                    warning(f"Model '{alias}' already exists on the proxy")
+                    if not confirm("Continue creating anyway?", default=True):
+                        raise typer.Exit(1)
+                break
     except (ConnectionError, AuthenticationError, APIError):
         pass  # Can't check — continue
 
@@ -278,6 +289,14 @@ def create_model_interactive(
 
     model_info = _build_model_info(input_cost, output_cost)
 
+    # Delete old model if replacing
+    if replace and existing_model_id:
+        try:
+            client.delete_model(existing_model_id)
+        except (ConnectionError, AuthenticationError, APIError) as e:
+            error(f"Failed to delete existing model: {e}")
+            raise typer.Exit(1)
+
     # Create model
     try:
         client.create_model(
@@ -285,7 +304,8 @@ def create_model_interactive(
             litellm_params=litellm_params,
             model_info=model_info,
         )
-        success(f"Model '{alias}' created successfully")
+        action = "replaced" if replace and existing_model_id else "created"
+        success(f"Model '{alias}' {action} successfully")
         print_detail("Provider", provider.id)
         print_detail("Model", full_model_id)
         if input_cost is not None:
@@ -312,6 +332,7 @@ def _create_model_non_interactive(
     output_cost: float | None,
     org: str | None,
     env: str | None,
+    replace: bool = False,
 ) -> None:
     """Non-interactive model creation with retry for missing/bad API key."""
     from llm_cli.ui import select_from_list, text_input
@@ -319,13 +340,19 @@ def _create_model_non_interactive(
     client = _get_client(org, env)
 
     # Check duplicate model name on proxy
+    existing_model_id: str | None = None
     try:
         existing_models = client.list_models()
-        existing_names = {m.get("model_name", "") for m in existing_models}
-        if alias in existing_names:
-            warning(f"Model '{alias}' already exists on the proxy")
-            if not confirm("Continue creating anyway?", default=True):
-                raise typer.Exit(1)
+        for m in existing_models:
+            if m.get("model_name") == alias:
+                if replace:
+                    existing_model_id = m.get("model_info", {}).get("id")
+                    warning(f"Model '{alias}' exists, will be replaced")
+                else:
+                    warning(f"Model '{alias}' already exists on the proxy")
+                    if not confirm("Continue creating anyway?", default=True):
+                        raise typer.Exit(1)
+                break
     except (ConnectionError, AuthenticationError, APIError):
         pass  # Can't check — continue
 
@@ -372,13 +399,22 @@ def _create_model_non_interactive(
 
     model_info = _build_model_info(input_cost, output_cost)
 
+    # Delete old model if replacing
+    if replace and existing_model_id:
+        try:
+            client.delete_model(existing_model_id)
+        except (ConnectionError, AuthenticationError, APIError) as e:
+            error(f"Failed to delete existing model: {e}")
+            raise typer.Exit(1)
+
     try:
         client.create_model(
             model_name=alias,
             litellm_params=litellm_params,
             model_info=model_info,
         )
-        success(f"Model '{alias}' created successfully")
+        action = "replaced" if replace and existing_model_id else "created"
+        success(f"Model '{alias}' {action} successfully")
         if input_cost is not None:
             print_detail("Input cost", f"${input_cost}/1M tokens")
         if output_cost is not None:
@@ -406,6 +442,7 @@ def apply_models(
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate and preview without creating"),
     skip_test: bool = typer.Option(False, "--skip-test", help="Skip model connection testing"),
+    replace: bool = typer.Option(False, "--replace", "-r", help="Replace existing models if they already exist"),
     org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
     env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
 ) -> None:
@@ -415,6 +452,7 @@ def apply_models(
         llm model apply -f models.yaml
         llm model apply -f models.yaml --dry-run
         llm model apply -f models.yaml --skip-test
+        llm model apply -f models.yaml --replace
         llm model apply -f models.yaml --env-file prod.env
     """
     from llm_cli.core.apply import ModelApplyService
@@ -437,6 +475,10 @@ def apply_models(
         raise typer.Exit(1)
 
     assert models_file is not None  # guaranteed when no errors
+
+    # Merge replace: CLI flag OR YAML defaults.replace (either one enables replace)
+    if not replace and models_file.defaults:
+        replace = models_file.defaults.replace
 
     # Show duplicate warnings (non-blocking)
     if service.duplicate_warnings:
@@ -519,7 +561,7 @@ def apply_models(
 
     # Apply
     skipped = len(models_file.models) - len(models_to_create)
-    report = service.apply(models_to_create)
+    report = service.apply(models_to_create, replace=replace)
     report.skipped = skipped
 
     for result in report.results:
@@ -529,7 +571,13 @@ def apply_models(
             error(f"{result.model_name} -> {result.message}")
 
     console.print()
-    parts = [f"{report.created} created"]
+    parts = []
+    if report.replaced:
+        parts.append(f"{report.replaced} replaced")
+    if report.created:
+        parts.append(f"{report.created} created")
+    if not parts:
+        parts.append("0 created")
     if report.failed:
         parts.append(f"{report.failed} failed")
     if report.skipped:

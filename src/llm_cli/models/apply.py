@@ -12,6 +12,7 @@ VALID_MODES = frozenset(
 class ModelDefaults(BaseModel):
     """Defaults block — merged into each model."""
 
+    replace: bool = False
     api_key: str | None = None
     api_base: str | None = None
     max_retries: int | None = None

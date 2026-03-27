@@ -61,6 +61,7 @@ class TestResult:
 class ApplyReport:
     total: int = 0
     created: int = 0
+    replaced: int = 0
     failed: int = 0
     skipped: int = 0
     results: list[ApplyResult] = field(default_factory=list)
@@ -265,26 +266,55 @@ class ModelApplyService:
             )
         return results
 
-    def apply(self, models: list[ModelEntry]) -> ApplyReport:
-        """Create models on the proxy (continue-on-error)."""
+    def apply(self, models: list[ModelEntry], replace: bool = False) -> ApplyReport:
+        """Create models on the proxy (continue-on-error).
+
+        Args:
+            models: List of model entries to create.
+            replace: If True, delete existing models with the same name before creating.
+        """
         report = ApplyReport(total=len(models))
+
+        # Build a map of existing model names -> model_info.id for replace mode
+        existing_map: dict[str, str] = {}
+        if replace:
+            try:
+                existing_models = self.client.list_models()
+                for m in existing_models:
+                    name = m.get("model_name", "")
+                    mid = m.get("model_info", {}).get("id")
+                    if name and mid:
+                        existing_map[name] = mid
+            except (APIError, AuthenticationError, ConnectionError):
+                pass
 
         for model in models:
             provider_model = f"{model.provider}/{model.provider_model}"
             try:
+                # Delete existing model if replacing
+                replaced = False
+                if replace and model.public_name in existing_map:
+                    self.client.delete_model(existing_map[model.public_name])
+                    replaced = True
+
                 payload = self.build_api_payload(model)
                 self.client.create_model(
                     model_name=payload["model_name"],
                     litellm_params=payload["litellm_params"],
                     model_info=payload.get("model_info"),
                 )
-                report.created += 1
+                if replaced:
+                    report.replaced += 1
+                    action = "replaced"
+                else:
+                    report.created += 1
+                    action = "created"
                 report.results.append(
                     ApplyResult(
                         model_name=model.public_name,
                         provider_model=provider_model,
                         success=True,
-                        message="created",
+                        message=action,
                     )
                 )
             except (APIError, AuthenticationError, ConnectionError) as exc:
@@ -353,19 +383,25 @@ class ModelApplyService:
             )
             return None
 
-    @staticmethod
-    def _merge_defaults_raw(raw: dict[str, Any]) -> dict[str, Any]:
+    # Keys in defaults that are NOT model-level fields (should not be merged into models)
+    _DEFAULTS_ONLY_KEYS = frozenset({"replace"})
+
+    @classmethod
+    def _merge_defaults_raw(cls, raw: dict[str, Any]) -> dict[str, Any]:
         """Merge ``defaults`` into each model entry (model values win)."""
         defaults = raw.get("defaults")
         if not defaults or not isinstance(defaults, dict):
             return raw
+
+        # Exclude non-model keys from merge
+        model_defaults = {k: v for k, v in defaults.items() if k not in cls._DEFAULTS_ONLY_KEYS}
 
         merged_models = []
         for model in raw.get("models", []):
             if not isinstance(model, dict):
                 merged_models.append(model)
                 continue
-            merged = {**defaults, **{k: v for k, v in model.items() if v is not None}}
+            merged = {**model_defaults, **{k: v for k, v in model.items() if v is not None}}
             merged_models.append(merged)
 
         return {**raw, "models": merged_models}
