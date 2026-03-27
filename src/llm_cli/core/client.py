@@ -193,14 +193,19 @@ class LiteLLMClient:
 
         return result
 
-    def list_supported_models(self, provider_id: str | None = None) -> list[ProviderInfo]:
+    def list_supported_models(
+        self,
+        provider_id: str | None = None,
+        mode: str | None = "chat",
+    ) -> list[ProviderInfo]:
         """List all models supported by LiteLLM.
 
         Tries /model_cost endpoint first, falls back to GitHub JSON.
-        Groups by litellm_provider. Only includes 'chat' mode models.
+        Groups by litellm_provider.
 
         Args:
             provider_id: Optional filter by provider.
+            mode: Filter by mode (default "chat"). Pass None to include all modes.
 
         Returns:
             List of ProviderInfo with all supported models.
@@ -213,8 +218,8 @@ class LiteLLMClient:
             if not isinstance(info, dict):
                 continue
 
-            # Only include chat models
-            if info.get("mode") != "chat":
+            # Filter by mode if specified
+            if mode and info.get("mode") != mode:
                 continue
 
             pid = info.get("litellm_provider", "")
@@ -225,7 +230,10 @@ class LiteLLMClient:
             if provider_id and pid != provider_id:
                 continue
 
-            model_info = self._parse_model_info(model_key, pid, info)
+            try:
+                model_info = self._parse_model_info(model_key, pid, info)
+            except Exception:
+                continue  # skip entries with invalid data (e.g. metadata rows)
 
             if pid not in providers_map:
                 providers_map[pid] = []

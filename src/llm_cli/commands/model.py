@@ -65,6 +65,7 @@ def create_model(
     model_id: Optional[str] = typer.Option(None, "--model", "-m", help="Model ID"),
     alias: Optional[str] = typer.Option(None, "--alias", "-a", help="Model alias/display name"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="API key"),
+    mode: str = typer.Option("chat", "--mode", help="Model mode (chat, embedding, image_generation, audio_transcription, text_completion)"),
     input_cost: Optional[float] = typer.Option(None, "--input-cost", help="Input price per 1M tokens ($)"),
     output_cost: Optional[float] = typer.Option(None, "--output-cost", help="Output price per 1M tokens ($)"),
     replace: bool = typer.Option(False, "--replace", "-r", help="Replace existing model if it already exists"),
@@ -76,17 +77,13 @@ def create_model(
     Examples:
         llm model create                                                    # Interactive
         llm model create -p openai -m gpt-4o -a my-gpt4o -k sk-xxx
-        llm model create -p openai -m gpt-4o -a my-gpt4o -k sk-xxx --input-cost 2.50 --output-cost 10.00
-        llm model create -p anthropic -m claude-sonnet-4-20250514 -a claude-sonnet -k sk-ant-xxx
-        llm model create -p azure -m gpt-4o -a azure-gpt4o -k xxx
-        llm model create -p gemini -m gemini-2.5-pro -a gemini-pro -k AIza-xxx
-        llm model create -p groq -m llama-3.3-70b-versatile -a llama70b -k gsk-xxx
-        llm model create --replace -p openai -m gpt-4o -a my-gpt4o -k sk-xxx  # Replace existing
+        llm model create -p deepgram -m deepgram/nova-3 -a nova-3 -k xxx --mode audio_transcription
+        llm model create --replace -p openai -m gpt-4o -a my-gpt4o -k sk-xxx
     """
     # If all required params provided, run non-interactively
     if provider_name and model_id and alias:
         _create_model_non_interactive(
-            provider_name, model_id, alias, api_key, input_cost, output_cost, org, env,
+            provider_name, model_id, alias, api_key, mode, input_cost, output_cost, org, env,
             replace=replace,
         )
     else:
@@ -95,6 +92,7 @@ def create_model(
             prefill_model=model_id,
             prefill_alias=alias,
             prefill_api_key=api_key,
+            prefill_mode=mode,
             prefill_input_cost=input_cost,
             prefill_output_cost=output_cost,
             org_override=org,
@@ -106,16 +104,17 @@ def create_model(
 def _build_model_info(
     input_cost: float | None,
     output_cost: float | None,
+    mode: str | None = "chat",
 ) -> dict | None:
-    """Build model_info dict from per-1M-token prices."""
-    if input_cost is None and output_cost is None:
-        return None
+    """Build model_info dict from per-1M-token prices and mode."""
     info: dict = {}
+    if mode:
+        info["mode"] = mode
     if input_cost is not None:
         info["input_cost_per_token"] = input_cost / 1_000_000
     if output_cost is not None:
         info["output_cost_per_token"] = output_cost / 1_000_000
-    return info
+    return info or None
 
 
 def create_model_interactive(
@@ -123,6 +122,7 @@ def create_model_interactive(
     prefill_model: str | None = None,
     prefill_alias: str | None = None,
     prefill_api_key: str | None = None,
+    prefill_mode: str = "chat",
     prefill_input_cost: float | None = None,
     prefill_output_cost: float | None = None,
     org_override: str | None = None,
@@ -134,7 +134,7 @@ def create_model_interactive(
 
     # Fetch all supported models from LiteLLM
     try:
-        all_providers = client.list_supported_models()
+        all_providers = client.list_supported_models(mode=None)
     except Exception:
         all_providers = []
 
@@ -194,6 +194,15 @@ def create_model_interactive(
         alias = text_input("Model alias (display name):", default=default_alias)
         if not alias:
             alias = default_alias
+
+    # Select mode
+    if prefill_mode == "chat":
+        # Only prompt if user didn't explicitly pass --mode
+        mode_choices = sorted(["chat", "embedding", "image_generation", "audio_transcription", "text_completion"])
+        mode_selection = fuzzy_select("Mode:", mode_choices, default="chat")
+        if mode_selection and mode_selection in mode_choices:
+            prefill_mode = mode_selection
+
     # Check duplicate model name on proxy
     existing_model_id: str | None = None
     try:
@@ -220,56 +229,62 @@ def create_model_interactive(
     else:
         api_key = None
 
-    # Test and create with retry loop
-    max_retries = 3
-    for attempt in range(max_retries):
-        litellm_params = {"model": full_model_id}
-        if api_key:
-            litellm_params["api_key"] = api_key
+    litellm_params = {"model": full_model_id}
+    if api_key:
+        litellm_params["api_key"] = api_key
 
-        # Test model before creating
-        console.print("\n[dim]Testing model connection...[/dim]")
-        with console.status("[bold cyan]Sending test request..."):
-            test_ok, test_message = client.test_model_completion(alias, litellm_params)
+    # Test and create with retry loop (only for chat mode)
+    if prefill_mode != "chat":
+        warning(f"Skipping test — not supported for mode '{prefill_mode}'")
+        console.print()
+    else:
+        max_retries = 3
+        for attempt in range(max_retries):
+            # Test model before creating
+            console.print("\n[dim]Testing model connection...[/dim]")
+            with console.status("[bold cyan]Sending test request..."):
+                test_ok, test_message = client.test_model_completion(alias, litellm_params)
 
-        if test_ok:
-            success(f"Test passed: {test_message}")
-            console.print()
-            break
-        else:
-            error(f"Test failed: {test_message}")
-
-            if attempt < max_retries - 1:
+            if test_ok:
+                success(f"Test passed: {test_message}")
                 console.print()
-                retry_choices = [
-                    "Re-enter API key",
-                    "Re-enter model ID",
-                    "Skip test and create anyway",
-                    "Cancel",
-                ]
-                from llm_cli.ui import select_from_list
-                retry_action = select_from_list("What would you like to do?", retry_choices)
-
-                if retry_action is None or "Cancel" in retry_action:
-                    raise typer.Exit(1)
-                elif "Re-enter API key" in retry_action:
-                    api_key = text_input("API Key:", password=True)
-                    continue
-                elif "Re-enter model ID" in retry_action:
-                    new_model = text_input("Model ID:", default=full_model_id)
-                    if new_model:
-                        full_model_id = new_model
-                    continue
-                elif "Skip test" in retry_action:
-                    warning("Skipping test - model may not work correctly")
-                    console.print()
-                    break
+                break
             else:
-                # Last attempt failed
-                if not confirm("All test attempts failed. Create model anyway?", default=False):
-                    raise typer.Exit(1)
-                warning("Creating model without successful test")
-                console.print()
+                error(f"Test failed: {test_message}")
+
+                if attempt < max_retries - 1:
+                    console.print()
+                    retry_choices = [
+                        "Re-enter API key",
+                        "Re-enter model ID",
+                        "Skip test and create anyway",
+                        "Cancel",
+                    ]
+                    from llm_cli.ui import select_from_list
+                    retry_action = select_from_list("What would you like to do?", retry_choices)
+
+                    if retry_action is None or "Cancel" in retry_action:
+                        raise typer.Exit(1)
+                    elif "Re-enter API key" in retry_action:
+                        api_key = text_input("API Key:", password=True)
+                        litellm_params["api_key"] = api_key
+                        continue
+                    elif "Re-enter model ID" in retry_action:
+                        new_model = text_input("Model ID:", default=full_model_id)
+                        if new_model:
+                            full_model_id = new_model
+                            litellm_params["model"] = full_model_id
+                        continue
+                    elif "Skip test" in retry_action:
+                        warning("Skipping test - model may not work correctly")
+                        console.print()
+                        break
+                else:
+                    # Last attempt failed
+                    if not confirm("All test attempts failed. Create model anyway?", default=False):
+                        raise typer.Exit(1)
+                    warning("Creating model without successful test")
+                    console.print()
 
     # Pricing — prompt if not prefilled
     input_cost = prefill_input_cost
@@ -287,7 +302,7 @@ def create_model_interactive(
             except ValueError:
                 pass
 
-    model_info = _build_model_info(input_cost, output_cost)
+    model_info = _build_model_info(input_cost, output_cost, mode=prefill_mode)
 
     # Delete old model if replacing
     if replace and existing_model_id:
@@ -308,6 +323,7 @@ def create_model_interactive(
         success(f"Model '{alias}' {action} successfully")
         print_detail("Provider", provider.id)
         print_detail("Model", full_model_id)
+        print_detail("Mode", prefill_mode)
         if input_cost is not None:
             print_detail("Input cost", f"${input_cost}/1M tokens")
         if output_cost is not None:
@@ -328,6 +344,7 @@ def _create_model_non_interactive(
     model_id: str,
     alias: str,
     api_key: str | None,
+    mode: str,
     input_cost: float | None,
     output_cost: float | None,
     org: str | None,
@@ -364,40 +381,43 @@ def _create_model_non_interactive(
         if key:
             litellm_params["api_key"] = key
 
-    # Test model with retry loop
-    max_retries = 3
-    for attempt in range(max_retries):
-        console.print("[dim]Testing model connection...[/dim]")
-        with console.status("[bold cyan]Sending test request..."):
-            test_ok, test_message = client.test_model_completion(alias, litellm_params)
+    # Test model with retry loop (only for chat mode)
+    if mode != "chat":
+        warning(f"Skipping test — not supported for mode '{mode}'")
+    else:
+        max_retries = 3
+        for attempt in range(max_retries):
+            console.print("[dim]Testing model connection...[/dim]")
+            with console.status("[bold cyan]Sending test request..."):
+                test_ok, test_message = client.test_model_completion(alias, litellm_params)
 
-        if test_ok:
-            success(f"Test passed: {test_message}")
-            break
-        else:
-            error(f"Test failed: {test_message}")
-            if attempt < max_retries - 1:
-                retry_choices = [
-                    "Enter API key",
-                    "Skip test and create anyway",
-                    "Cancel",
-                ]
-                retry_action = select_from_list("What would you like to do?", retry_choices)
-
-                if retry_action and "API key" in retry_action:
-                    new_key = text_input("API key:", password=True)
-                    if new_key:
-                        litellm_params["api_key"] = new_key
-                elif retry_action and "Skip" in retry_action:
-                    warning("Skipping test, creating model anyway")
-                    break
-                else:
-                    raise typer.Exit(6)
+            if test_ok:
+                success(f"Test passed: {test_message}")
+                break
             else:
-                error("Max retries reached")
-                raise typer.Exit(6)
+                error(f"Test failed: {test_message}")
+                if attempt < max_retries - 1:
+                    retry_choices = [
+                        "Enter API key",
+                        "Skip test and create anyway",
+                        "Cancel",
+                    ]
+                    retry_action = select_from_list("What would you like to do?", retry_choices)
 
-    model_info = _build_model_info(input_cost, output_cost)
+                    if retry_action and "API key" in retry_action:
+                        new_key = text_input("API key:", password=True)
+                        if new_key:
+                            litellm_params["api_key"] = new_key
+                    elif retry_action and "Skip" in retry_action:
+                        warning("Skipping test, creating model anyway")
+                        break
+                    else:
+                        raise typer.Exit(6)
+                else:
+                    error("Max retries reached")
+                    raise typer.Exit(6)
+
+    model_info = _build_model_info(input_cost, output_cost, mode=mode)
 
     # Delete old model if replacing
     if replace and existing_model_id:
@@ -415,6 +435,7 @@ def _create_model_non_interactive(
         )
         action = "replaced" if replace and existing_model_id else "created"
         success(f"Model '{alias}' {action} successfully")
+        print_detail("Mode", mode)
         if input_cost is not None:
             print_detail("Input cost", f"${input_cost}/1M tokens")
         if output_cost is not None:

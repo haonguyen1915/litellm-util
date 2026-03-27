@@ -251,8 +251,22 @@ class ModelApplyService:
         """Test each model by calling the provider API directly via litellm SDK."""
         results: list[TestResult] = []
         for model in models_file.models:
-            payload = self.build_api_payload(model)
             provider_model = f"{model.provider}/{model.provider_model}"
+            mode = model.mode or "chat"
+
+            # Skip test for non-chat modes (litellm.completion only works for chat)
+            if mode != "chat":
+                results.append(
+                    TestResult(
+                        model_name=model.public_name,
+                        provider_model=provider_model,
+                        passed=True,
+                        message=f"skipped (mode={mode})",
+                    )
+                )
+                continue
+
+            payload = self.build_api_payload(model)
             passed, message = LiteLLMClient.test_model_completion(
                 model.public_name, payload["litellm_params"],
             )
