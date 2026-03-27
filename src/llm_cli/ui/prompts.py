@@ -141,7 +141,9 @@ def confirm(message: str, default: bool = False) -> bool:
         style=custom_style,
     ).ask()
 
-    return result if result is not None else False
+    if result is None:
+        raise KeyboardInterrupt
+    return result
 
 
 def fuzzy_select(
