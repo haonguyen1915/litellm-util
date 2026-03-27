@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.5] - 2026-03-27
+
+### Release Notes
+
+Enhanced CLI functionality with new features for model management and key testing.
+
+### What's Changed
+- Introduced replace mode for model creation, allowing existing models to be updated seamlessly.
+- Added a new CLI command to test virtual keys, improving key management and validation processes.
+
+### Features
+
+- feat: support replace mode (079f2e6)
+- feat: add testkey CLI (c44eef7)
+
+**Contributors:** @haonguyen
+
+**Compare changes:** [v0.2.4...v0.2.5](https://github.com/haonguyen1915/litellm-util.git/-/compare/v0.2.4...v0.2.5)
+
 ## [0.2.4] - 2026-03-26
 
 ### Release Notes
