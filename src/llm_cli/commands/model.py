@@ -194,8 +194,9 @@ def create_model_interactive(
         existing_models = client.list_models()
         existing_names = {m.get("model_name", "") for m in existing_models}
         if alias in existing_names:
-            error(f"Model '{alias}' already exists on the proxy")
-            raise typer.Exit(1)
+            warning(f"Model '{alias}' already exists on the proxy")
+            if not confirm("Continue creating anyway?", default=True):
+                raise typer.Exit(1)
     except (ConnectionError, AuthenticationError, APIError):
         pass  # Can't check — continue
 
@@ -322,8 +323,9 @@ def _create_model_non_interactive(
         existing_models = client.list_models()
         existing_names = {m.get("model_name", "") for m in existing_models}
         if alias in existing_names:
-            error(f"Model '{alias}' already exists on the proxy")
-            raise typer.Exit(1)
+            warning(f"Model '{alias}' already exists on the proxy")
+            if not confirm("Continue creating anyway?", default=True):
+                raise typer.Exit(1)
     except (ConnectionError, AuthenticationError, APIError):
         pass  # Can't check — continue
 
@@ -435,6 +437,12 @@ def apply_models(
         raise typer.Exit(1)
 
     assert models_file is not None  # guaranteed when no errors
+
+    # Show duplicate warnings (non-blocking)
+    if service.duplicate_warnings:
+        console.print()
+        for dup_name in service.duplicate_warnings:
+            warning(f"Model '{dup_name}' already exists on the proxy")
 
     # Preview table
     console.print()

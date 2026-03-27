@@ -110,6 +110,12 @@ class ModelApplyService:
 
     def __init__(self, client: LiteLLMClient) -> None:
         self.client = client
+        self._duplicate_warnings: list[str] = []
+
+    @property
+    def duplicate_warnings(self) -> list[str]:
+        """Model names that already exist on the proxy (non-blocking)."""
+        return self._duplicate_warnings
 
     # ------------------------------------------------------------------
     # Public API
@@ -376,16 +382,9 @@ class ModelApplyService:
             existing_names = set()
 
         for i, model in enumerate(models_file.models):
-            # Check duplicate against proxy
+            # Warn about duplicate (non-blocking)
             if model.public_name in existing_names:
-                errors.append(
-                    ValidationError(
-                        model_index=i,
-                        model_name=model.public_name,
-                        field="public_name",
-                        message=f"model '{model.public_name}' already exists on the proxy",
-                    )
-                )
+                self._duplicate_warnings.append(model.public_name)
 
             # Validate api_key
             if model.api_key is not None:
