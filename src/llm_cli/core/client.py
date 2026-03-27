@@ -533,6 +533,60 @@ class LiteLLMClient:
         """
         return self._request("POST", "/key/delete", json={"keys": [key]})
 
+    def test_virtual_key(
+        self, virtual_key: str, model: str,
+    ) -> tuple[bool, str]:
+        """Test a virtual key by sending a chat completion request.
+
+        Uses the virtual key (not master key) as Bearer token against
+        the proxy's ``/chat/completions`` endpoint.
+
+        Args:
+            virtual_key: The ``sk-...`` secret key to test.
+            model: Model name to use in the request.
+
+        Returns:
+            ``(success, message)`` tuple.
+        """
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {virtual_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 5,
+        }
+
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(url, headers=headers, json=payload)
+
+            if response.status_code == 200:
+                data = response.json()
+                usage = data.get("usage", {})
+                tokens = usage.get("total_tokens", 0)
+                return True, f"OK (HTTP {response.status_code}, {tokens} tokens)"
+
+            # Try to extract error detail
+            try:
+                err = response.json()
+                detail = err.get("error", {})
+                if isinstance(detail, dict):
+                    msg = detail.get("message", response.text[:200])
+                else:
+                    msg = str(detail)[:200]
+            except Exception:
+                msg = response.text[:200]
+
+            return False, f"HTTP {response.status_code}: {msg}"
+
+        except httpx.ConnectError:
+            return False, "Cannot connect to proxy"
+        except Exception as exc:
+            return False, str(exc)
+
     # ==================== Team Operations ====================
 
     def list_teams(self) -> list[Team]:

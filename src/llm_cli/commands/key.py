@@ -515,3 +515,65 @@ def delete_key(
     except APIError as e:
         error(f"Failed to delete key: {e.message}")
         raise typer.Exit(1)
+
+
+@app.command("test")
+def test_key(
+    virtual_key: Optional[str] = typer.Option(None, "--key", "-k", help="Virtual key (sk-...) to test"),
+    model_name: Optional[str] = typer.Option(None, "--model", "-m", help="Model name to test"),
+    org: Optional[str] = typer.Option(None, "--org", "-o", help="Override organization"),
+    env: Optional[str] = typer.Option(None, "--env", "-e", help="Override environment"),
+) -> None:
+    """Test a virtual key by sending a chat completion request.
+
+    Sends a minimal request to /chat/completions using the virtual key
+    as Bearer token to verify it works with the specified model.
+
+    Examples:
+        llm key test                                    # Interactive
+        llm key test -k sk-xxx -m gpt-4o                # Direct
+    """
+    client = _get_client(org, env)
+
+    # Get virtual key
+    if not virtual_key:
+        virtual_key = text_input("Virtual key (sk-...):", password=True)
+        if not virtual_key:
+            error("Virtual key is required")
+            raise typer.Exit(1)
+
+    # Get model name - interactive selection from proxy models
+    if not model_name:
+        try:
+            proxy_models = client.list_models()
+            model_names = [m.get("model_name", "") for m in proxy_models if m.get("model_name")]
+            if model_names:
+                context_name = f"{client.context.organization_id}/{client.context.environment}"
+                from llm_cli.ui.tables import print_proxy_models_table
+                print_proxy_models_table(proxy_models, context_name)
+
+                console.print("\n[dim]Type to search models (tab to complete):[/dim]")
+                selection = fuzzy_select("Model:", model_names)
+                if selection and selection in model_names:
+                    model_name = selection
+        except Exception:
+            pass
+
+        if not model_name:
+            model_name = text_input("Model name:")
+            if not model_name:
+                error("Model name is required")
+                raise typer.Exit(1)
+
+    # Test
+    console.print()
+    console.print(f"[dim]Testing key with model '{model_name}'...[/dim]")
+    with console.status("[bold cyan]Sending test request..."):
+        ok, message = client.test_virtual_key(virtual_key, model_name)
+
+    console.print()
+    if ok:
+        success(f"Key works: {message}")
+    else:
+        error(f"Key test failed: {message}")
+        raise typer.Exit(1)
