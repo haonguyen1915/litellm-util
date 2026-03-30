@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.6] - 2026-03-30
+
+### Release Notes
+
+Enhanced functionality and bug fixes for improved user experience.
+
+### What's Changed
+- Enhanced history API to include command recording for better tracking.
+- Introduced chat mode for models, expanding interaction capabilities.
+- Resolved critical bug with Ctrl+C functionality, improving stability.
+
+### Features
+
+- feat: enhance history API (73edb04)
+- feat: add chat mode (de6baea)
+
+### Bug Fixes
+
+- fix: bug ctr+C (a828bf0)
+
+**Contributors:** @haonguyen
+
+**Compare changes:** [v0.2.5...v0.2.6](https://github.com/haonguyen1915/litellm-util.git/-/compare/v0.2.5...v0.2.6)
+
 ## [0.2.5] - 2026-03-27
 
 ### Release Notes
