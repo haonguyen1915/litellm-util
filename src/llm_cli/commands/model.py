@@ -8,6 +8,7 @@ from rich.table import Table
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
+from llm_cli.core.history import record_command
 from llm_cli.ui import confirm, error, fuzzy_select, success, text_input, warning
 from llm_cli.ui.console import console, info, print_detail
 from llm_cli.ui.tables import print_models_table, print_proxy_models_table
@@ -99,6 +100,35 @@ def create_model(
             env_override=env,
             replace=replace,
         )
+
+
+def _record_create_command(
+    provider: str,
+    model_id: str,
+    alias: str,
+    mode: str,
+    input_cost: float | None = None,
+    output_cost: float | None = None,
+    replace: bool = False,
+    org: str | None = None,
+    env: str | None = None,
+) -> None:
+    """Record the resolved 'model create' command to history."""
+    args = ["model", "create", "-p", provider, "-m", model_id, "-a", alias, "--mode", mode]
+    if input_cost is not None:
+        args += ["--input-cost", str(input_cost)]
+    if output_cost is not None:
+        args += ["--output-cost", str(output_cost)]
+    if replace:
+        args.append("--replace")
+    if org:
+        args += ["-o", org]
+    if env:
+        args += ["-e", env]
+    try:
+        record_command(args)
+    except Exception:
+        pass
 
 
 def _build_model_info(
@@ -324,6 +354,11 @@ def create_model_interactive(
         print_detail("Provider", provider.id)
         print_detail("Model", full_model_id)
         print_detail("Mode", prefill_mode)
+        _record_create_command(
+            provider=provider.id, model_id=full_model_id, alias=alias,
+            mode=prefill_mode, input_cost=input_cost, output_cost=output_cost,
+            replace=replace, org=org_override, env=env_override,
+        )
         if input_cost is not None:
             print_detail("Input cost", f"${input_cost}/1M tokens")
         if output_cost is not None:
@@ -436,6 +471,11 @@ def _create_model_non_interactive(
         action = "replaced" if replace and existing_model_id else "created"
         success(f"Model '{alias}' {action} successfully")
         print_detail("Mode", mode)
+        _record_create_command(
+            provider=provider_name, model_id=model_id, alias=alias,
+            mode=mode, input_cost=input_cost, output_cost=output_cost,
+            replace=replace, org=org, env=env,
+        )
         if input_cost is not None:
             print_detail("Input cost", f"${input_cost}/1M tokens")
         if output_cost is not None:
@@ -677,6 +717,11 @@ def delete_model(
     try:
         client.delete_model(model_id)
         success(f"Model '{model_name}' deleted")
+        # Record resolved command to history
+        try:
+            record_command(["model", "delete", model_name, "--yes"])
+        except Exception:
+            pass
     except APIError as e:
         error(f"Failed to delete model: {e.message}")
         raise typer.Exit(1)

@@ -321,14 +321,15 @@ def print_config_table(orgs: dict) -> None:
 
 
 def print_history_table(entries: list[dict]) -> None:
-    """Print command history as a simple list.
+    """Print command history as a simple list (oldest first).
 
     Args:
-        entries: List of dicts with 'command' and 'timestamp' keys.
+        entries: List of dicts with 'command' and 'timestamp' keys (newest-first).
     """
-    for i, entry in enumerate(entries, 1):
-        ts = entry["timestamp"].replace("T", " ")
-        console.print(f"[dim]{i:>3}[/dim]  {entry['command']}  [dim]{ts}[/dim]")
+    total = len(entries)
+    reversed_entries = list(reversed(entries))
+    for i, entry in enumerate(reversed_entries):
+        console.print(f"[dim]{total - i:>3}[/dim]  {entry['command']}")
 
 
 def format_tokens(tokens: int) -> str:

@@ -26,6 +26,16 @@ def main_callback(ctx: typer.Context) -> None:
     if args[0] == "history":
         return
 
+    # Commands with interactive flows record themselves with resolved args
+    _SELF_RECORDING = {
+        ("model", "create"),
+        ("model", "delete"),
+        ("provider", "models"),
+    }
+    cmd_tuple = tuple(args[:2]) if len(args) >= 2 else ()
+    if cmd_tuple in _SELF_RECORDING:
+        return
+
     try:
         record_command(args)
     except Exception:

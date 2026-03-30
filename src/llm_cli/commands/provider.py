@@ -7,6 +7,7 @@ import typer
 
 from llm_cli.core.client import APIError, AuthenticationError, ConnectionError, LiteLLMClient
 from llm_cli.core.context import ConfigurationError
+from llm_cli.core.history import record_command
 from llm_cli.models.provider import ModelInfo
 from llm_cli.ui import error, fuzzy_select, select_from_list, success, warning
 from llm_cli.ui.console import console
@@ -180,6 +181,19 @@ def list_models(
         if selection is None or selection not in provider_ids:
             raise typer.Exit(1)
         provider_name = selection
+
+    # Record resolved command to history
+    try:
+        args = ["provider", "models", provider_name]
+        if search:
+            args += ["-s", search]
+        if sort != SortField.name:
+            args += ["--sort", sort.value]
+        if capability:
+            args += ["-c", capability]
+        record_command(args)
+    except Exception:
+        pass
 
     # Find provider
     provider = next((p for p in supported if p.id == provider_name), None)

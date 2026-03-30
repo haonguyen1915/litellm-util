@@ -1,11 +1,11 @@
 """History command — display CLI invocation history."""
 
-from typing import Optional
+from __future__ import annotations
 
 import typer
 
 from llm_cli.core.history import clear_history, load_history
-from llm_cli.ui import info, success, warning
+from llm_cli.ui import info, success
 from llm_cli.ui.tables import print_history_table
 
 
