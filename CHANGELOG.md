@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.7] - 2026-03-31
+
+### Release Notes
+
+### What's Changed
+- Resolved version mismatch in proxy configuration to ensure consistent deployment.
+
+### Bug Fixes
+
+- fix: mismatch version proxy (111fb57)
+
+**Contributors:** @haonguyen
+
+**Compare changes:** [v0.2.6...v0.2.7](https://github.com/haonguyen1915/litellm-util.git/-/compare/v0.2.6...v0.2.7)
+
 ## [0.2.6] - 2026-03-30
 
 ### Release Notes
