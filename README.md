@@ -1,6 +1,21 @@
 # LiteLLM CLI (`llm`)
 
-CLI tool for managing [LiteLLM Proxy Server](https://docs.litellm.ai/) - models, virtual keys, teams, and multi-environment configurations.
+[![PyPI version](https://img.shields.io/pypi/v/litellm-util.svg)](https://pypi.org/project/litellm-util/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
+A powerful CLI tool for managing [LiteLLM Proxy Server](https://docs.litellm.ai/) - models, virtual keys, teams, usage analytics, and multi-environment configurations.
+
+## Features
+
+- **Model Management** - Create, list, delete, and bulk-apply models with connection testing
+- **Virtual Key Management** - Create, update, test, and delete API keys with team/budget/model controls
+- **Team Management** - Create teams with budgets, model restrictions, and member management
+- **Usage Analytics** - Track spend by key, team, model with daily activity breakdowns
+- **Multi-Environment** - Manage multiple orgs and environments (dev/staging/prod) from one CLI
+- **Version-Aware** - Supports both LiteLLM Proxy v1 (<=1.72.x) and v2 (>=1.80.x)
+- **Interactive & Scriptable** - Full interactive prompts or non-interactive flags for CI/CD
+- **76+ Providers** - Browse and deploy models from OpenAI, Anthropic, Azure, AWS Bedrock, Vertex AI, and more
 
 ## Installation
 
@@ -25,7 +40,7 @@ llm --help
 ### From source
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/haonguyen1915/litellm-util.git
 cd litellm-util
 poetry install
 ```
@@ -46,8 +61,11 @@ llm model create
 # 4. Generate a virtual API key
 llm key create
 
-# 5. Create a team with budget
-llm team create
+# 5. Test the key
+llm key test
+
+# 6. Check usage
+llm usage summary --last 7d
 ```
 
 ## Commands
@@ -66,6 +84,7 @@ First run prompts:
 - Environment name (`dev`, `prod`, `staging`)
 - LiteLLM Proxy URL (e.g. `https://litellm.example.com`)
 - Master Key
+- Proxy Version (`v1` for <=1.72.x or `v2` for >=1.80.x)
 
 Subsequent runs let you add new environments to existing orgs or create new orgs.
 
@@ -79,7 +98,7 @@ Manage configurations and switch environments.
 # List all orgs & environments
 llm config list
 
-# Show current active config
+# Show current active config (org, env, URL, version)
 llm config current
 
 # Switch environment (interactive)
@@ -101,9 +120,11 @@ organizations:
       dev:
         url: http://localhost:4000
         master_key: sk-dev-xxx
+        version: v2
       prod:
         url: https://litellm.my-company.com
         master_key: sk-prod-xxx
+        version: v1    # for LiteLLM <= 1.72.x
 default:
   organization: my-company
   environment: dev
@@ -113,39 +134,26 @@ default:
 
 ### `llm provider`
 
-Browse supported LLM providers and their models. This is a static reference - no proxy connection needed.
+Browse 76+ supported LLM providers and their models. This is a static reference - no proxy connection needed.
 
 ```bash
 # List all supported providers
 llm provider list
-```
 
-Output:
-
-```
-                         Supported Providers
-┏━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ #  ┃ Provider  ┃ Description                        ┃    Models ┃
-┡━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
-│ 1  │ openai    │ OpenAI (GPT-4, GPT-3.5, o1)       │  9 models │
-│ 2  │ anthropic │ Anthropic (Claude 4, Claude 3.5)   │  7 models │
-│ 3  │ azure     │ Azure OpenAI Service               │  5 models │
-│ 4  │ vertex_ai │ Google Vertex AI (Gemini)          │  4 models │
-│ 5  │ bedrock   │ AWS Bedrock                        │ 12 models │
-│ 6  │ groq      │ Groq (Ultra-fast inference)        │  5 models │
-│ 7  │ mistral   │ Mistral AI                         │  6 models │
-│ 8  │ deepseek  │ DeepSeek                           │  3 models │
-│ 9  │ cohere    │ Cohere                             │  4 models │
-│ 10 │ ollama    │ Ollama (Local models)              │  8 models │
-└────┴───────────┴────────────────────────────────────┴───────────┘
+# Search providers by name
+llm provider list --search vertex
 ```
 
 ```bash
-# List models for a provider (interactive - allows selecting a model for details)
+# List models for a provider (interactive - select model for details)
 llm provider models anthropic
 
 # Non-interactive (just print the table)
 llm provider models anthropic -n
+
+# Sort by price or context window
+llm provider models openai --sort price
+llm provider models openai --sort context
 
 # Filter by capability
 llm provider models openai -c vision
@@ -161,7 +169,7 @@ Manage models deployed on the LiteLLM Proxy. Requires a running proxy.
 # List models on the proxy
 llm model list
 
-# Create model (interactive)
+# Create model (interactive - guided wizard)
 llm model create
 
 # Create model (non-interactive)
@@ -170,6 +178,24 @@ llm model create --provider anthropic --model claude-sonnet-4-20250514 --alias c
 # Create with API key
 llm model create -p openai -m openai/gpt-4o -a gpt-4o -k sk-xxx
 
+# Create with specific mode (embedding, image_generation, etc.)
+llm model create -p openai -m openai/text-embedding-3-small -a embedding --mode embedding
+
+# Replace existing model (delete old + create new)
+llm model create -p anthropic -m claude-sonnet-4-20250514 -a claude-sonnet --replace
+
+# Bulk create models from YAML file
+llm model apply -f models.yaml
+
+# Bulk apply with replace mode and skip testing
+llm model apply -f models.yaml --replace --skip-test
+
+# Dry-run to validate YAML without creating
+llm model apply -f models.yaml --dry-run
+
+# Use custom .env file for API keys
+llm model apply -f models.yaml --env-file /path/to/.env
+
 # Delete model (interactive selection)
 llm model delete
 
@@ -177,17 +203,34 @@ llm model delete
 llm model delete my-model --yes
 ```
 
-**Global flags** for all proxy commands:
+#### Model Modes
 
-```bash
-# Override organization
-llm model list --org my-company
+When creating models, use `--mode` to specify the model type:
 
-# Override environment
-llm model list --env prod
+| Mode | Description |
+|------|-------------|
+| `chat` | Chat completion (default) |
+| `embedding` | Text embedding |
+| `image_generation` | Image generation |
+| `audio_transcription` | Audio transcription |
+| `text_completion` | Text completion |
 
-# Combine both
-llm model list --org my-company --env prod
+#### Model Apply YAML Format
+
+```yaml
+defaults:
+  replace: true  # Replace existing models by default
+
+models:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: claude-sonnet
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
 ```
 
 ---
@@ -208,6 +251,24 @@ llm key create --alias my-key --team backend --budget 100 --models "gpt-4o,claud
 
 # Create key with expiration
 llm key create --alias temp-key --expires 2025-12-31
+
+# Update key name
+llm key update my-key --name "New Key Name"
+
+# Update key team assignment
+llm key update my-key --team new-team
+
+# Update key model access
+llm key update my-key --models "gpt-4o,claude-sonnet"
+
+# Grant access to all team models
+llm key update my-key --models all-team-models
+
+# Test a key with a chat completion request
+llm key test
+
+# Test with specific key and model
+llm key test --key sk-xxx --model gpt-4o
 
 # Delete key (interactive selection)
 llm key delete
@@ -238,10 +299,10 @@ llm team get <team-id>
 llm team create
 
 # Create team with options
-llm team create --id backend --name "Backend Team" --budget 500
+llm team create --name "Backend Team" --budget 500 --models "gpt-4o,claude-sonnet"
 
-# Create team with model restrictions
-llm team create --id mobile --name "Mobile Team" --models "gpt-4o-mini,claude-haiku"
+# Create team with auto-resetting monthly budget
+llm team create --name "Mobile Team" --budget 200 --reset-monthly
 
 # Update team (interactive - choose what to update)
 llm team update
@@ -253,12 +314,60 @@ llm team update backend --name "Backend Engineers" --budget 1000
 llm team update backend --add-models "gpt-4o"
 llm team update backend --remove-models "gpt-3.5-turbo"
 
-# Delete team (interactive selection)
-llm team delete
-
-# Delete team directly
+# Delete team
 llm team delete backend --yes
 ```
+
+---
+
+### `llm usage`
+
+View spend and usage analytics. Supports date range filtering with explicit dates or shorthand.
+
+```bash
+# Spend summary grouped by tag
+llm usage summary --last 7d
+
+# Spend by API key
+llm usage by-key --last 30d
+
+# Spend by team
+llm usage by-team --last 7d
+
+# Spend by model
+llm usage by-model --last 30d
+
+# Daily activity breakdown (user scope)
+llm usage activity --last 7d
+
+# Daily activity breakdown (team scope)
+llm usage activity --scope team --last 7d
+
+# Spend logs with model breakdown
+llm usage logs --last 7d
+
+# Filter logs by request ID
+llm usage logs --request-id req_xxx
+
+# Custom date range
+llm usage summary --start 2025-01-01 --end 2025-01-31
+
+# Show top N results
+llm usage by-key --last 30d --top 10
+```
+
+#### Date Filtering
+
+All usage commands support flexible date filtering:
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--last 1h` | Last 1 hour | `llm usage summary --last 1h` |
+| `--last 1d` | Last 1 day | `llm usage by-key --last 1d` |
+| `--last 7d` | Last 7 days | `llm usage by-team --last 7d` |
+| `--last 15d` | Last 15 days | `llm usage activity --last 15d` |
+| `--last 30d` | Last 30 days | `llm usage by-model --last 30d` |
+| `--start / --end` | Explicit range | `--start 2025-01-01 --end 2025-01-31` |
 
 ---
 
@@ -267,7 +376,7 @@ llm team delete backend --yes
 Enterprise proxy administration commands.
 
 ```bash
-# Rotate master key (interactive - prompts for new key or auto-generates)
+# Rotate master key (interactive)
 llm admin rotate-key
 
 # With org/env override
@@ -277,7 +386,7 @@ llm admin rotate-key --org my-company --env prod
 The `rotate-key` command:
 1. Shows current context (org/env/url)
 2. Prompts for a new key or auto-generates one (`sk-` prefixed)
-3. Calls `POST /key/regenerate` to rotate and re-encrypt all model API keys in the DB
+3. Calls the proxy to rotate and re-encrypt all model API keys in the DB
 4. Offers to update local config with the new key
 5. Copies new key to clipboard
 
@@ -300,21 +409,22 @@ llm history -n 10
 llm history --clear
 ```
 
-Output:
+---
 
-```
-                    Command History
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
-┃ #  ┃ Command                            ┃ Last Run            ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
-│ 1  │ llm model list                     │ 2025-01-13 14:30:02 │
-│ 2  │ llm key create --alias my-key      │ 2025-01-13 14:25:11 │
-│ 3  │ llm config use my-org prod         │ 2025-01-13 13:10:45 │
-│ 4  │ llm team list                      │ 2025-01-12 09:22:30 │
-└────┴──────────────────────────────────────┴─────────────────────┘
-```
+## Global Flags
 
-History file location: `~/.litellm/history.jsonl`
+All proxy commands support overriding the active organization and environment:
+
+```bash
+# Override organization
+llm model list --org my-company
+
+# Override environment
+llm model list --env prod
+
+# Combine both
+llm model list --org my-company --env prod
+```
 
 ---
 
@@ -328,14 +438,14 @@ llm init
 # Org ID: my-company
 # Environment: dev
 # URL: http://localhost:4000
-# Master Key: sk-dev-xxx
+# Version: v2
 
 # Add prod environment
 llm init
 # Select: my-company
 # Environment: prod
 # URL: https://litellm.my-company.com
-# Master Key: sk-prod-xxx
+# Version: v1
 
 # Switch between environments
 llm config use my-company dev
@@ -351,6 +461,29 @@ llm config current
 llm model list --env prod
 llm key list --org my-company --env staging
 ```
+
+---
+
+## Proxy Version Support
+
+The CLI supports both LiteLLM Proxy versions with automatic API adaptation:
+
+| Version | LiteLLM Proxy | Description |
+|---------|---------------|-------------|
+| `v2` (default) | >= 1.80.x | Uses newer aggregated API endpoints |
+| `v1` | <= 1.72.x | Uses legacy activity-based endpoints with data flattening |
+
+Set the version per environment in `~/.litellm/config.yaml`:
+
+```yaml
+environments:
+  prod:
+    url: https://litellm.example.com
+    master_key: sk-xxx
+    version: v1   # or v2
+```
+
+Or configure during `llm init`.
 
 ---
 
@@ -400,18 +533,20 @@ src/llm_cli/
     init.py            # llm init
     config.py          # llm config [list|use|current]
     provider.py        # llm provider [list|models]
-    model.py           # llm model [list|create|delete]
-    key.py             # llm key [list|create|delete]
-    team.py            # llm team [list|get|create|delete|update]
+    model.py           # llm model [list|create|apply|delete]
+    key.py             # llm key [list|create|update|test|delete]
+    team.py            # llm team [list|get|create|update|delete]
+    usage.py           # llm usage [summary|by-key|by-team|by-model|activity|logs]
     admin.py           # llm admin [rotate-key]
     history.py         # llm history
   core/
     config.py          # Config load/save (~/.litellm/)
-    client.py          # LiteLLM Proxy HTTP client
+    client.py          # LiteLLM Proxy HTTP client (v1/v2 aware)
     context.py         # Current org/env context
+    apply.py           # Bulk model apply logic
     history.py         # Command history tracking (~/.litellm/history.jsonl)
   models/              # Pydantic schemas
-  providers/           # Static provider/model definitions
+  providers/           # Static provider/model definitions (76+ providers)
   ui/
     console.py         # Rich console helpers
     prompts.py         # questionary wrappers

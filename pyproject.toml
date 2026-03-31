@@ -1,9 +1,23 @@
 [tool.poetry]
 name = "litellm-util"
 version = "0.2.7"
-description = "CLI tool for managing LiteLLM Proxy Server"
-authors = ["Hao Nguyen <hao.nguyen@example.com>"]
+description = "A powerful CLI tool for managing LiteLLM Proxy Server - models, virtual keys, teams, usage analytics, and multi-environment configurations."
+authors = ["Hao Nguyen <haonguyen1915@gmail.com>"]
 license = "GPL-3.0-or-later"
+readme = "README.md"
+homepage = "https://github.com/haonguyen1915/litellm-util"
+repository = "https://github.com/haonguyen1915/litellm-util"
+keywords = ["litellm", "llm", "proxy", "cli", "ai", "openai", "anthropic", "api-management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
 packages = [{include = "llm_cli", from = "src"}]
 
 [tool.poetry.scripts]
