@@ -8,6 +8,7 @@ class Environment(BaseModel):
 
     url: str
     master_key: str
+    version: str = "v2"  # v1 = LiteLLM <=1.72.x, v2 = LiteLLM >=1.80.x
 
 
 class Organization(BaseModel):

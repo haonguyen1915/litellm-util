@@ -122,6 +122,7 @@ def current_config() -> None:
         print_detail("Organization", f"{ctx.organization_id} ({ctx.organization_name})")
         print_detail("Environment", ctx.environment)
         print_detail("URL", ctx.url)
+        print_detail("Version", ctx.version)
         console.print()
     except ConfigurationError as e:
         error(str(e))

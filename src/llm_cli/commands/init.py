@@ -136,4 +136,12 @@ def _create_new_environment(org_id: str, existing_envs: list[str]) -> tuple[str,
         error("Master key is required")
         raise typer.Exit(1)
 
-    return env_name, Environment(url=url, master_key=master_key)
+    # LiteLLM proxy version
+    version_choices = [
+        "v2 (>= 1.80.x, recommended)",
+        "v1 (<= 1.72.x)",
+    ]
+    version_selection = select_from_list("LiteLLM Proxy version:", version_choices)
+    version = "v1" if version_selection and "v1" in version_selection else "v2"
+
+    return env_name, Environment(url=url, master_key=master_key, version=version)

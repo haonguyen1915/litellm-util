@@ -54,6 +54,7 @@ class LiteLLMClient:
 
         self._model_cost_cache: dict[str, Any] | None = None
         self.base_url = self._context.url.rstrip("/")
+        self.version = self._context.version
         self.headers = {
             "Authorization": f"Bearer {self._context.master_key}",
             "Content-Type": "application/json",
@@ -410,27 +411,116 @@ class LiteLLMClient:
         start_date: str,
         end_date: str,
     ) -> tuple[dict | list, str]:
-        """Get spend data for all keys, with automatic endpoint fallback.
+        """Get spend data for all keys, version-aware.
 
-        Tries /user/daily/activity/aggregated first (date-filtered, per-key
-        breakdown). If the proxy returns 404 (older LiteLLM versions), falls
-        back to /global/spend/keys (total spend only, no date filtering).
+        v2 (>=1.80.x): Uses /user/daily/activity/aggregated (per-key breakdown).
+        v1 (<=1.72.x): Uses /user/daily/activity with pagination, aggregates by key.
 
         Args:
             start_date: Start date (YYYY-MM-DD).
             end_date: End date (YYYY-MM-DD).
 
         Returns:
-            Tuple of (data, source) where source is 'aggregated' or 'global'.
+            Tuple of (data, source) where source is 'aggregated' or 'activity'.
         """
-        try:
-            data = self.get_aggregated_activity(start_date, end_date)
-            return data, "aggregated"
-        except APIError as e:
-            if e.status_code == 404:
-                data = self.get_global_spend_keys()
-                return data, "global"
-            raise
+        if self.version == "v1":
+            data = self._get_keys_spend_from_activity(start_date, end_date)
+            return data, "activity"
+
+        data = self.get_aggregated_activity(start_date, end_date)
+        return data, "aggregated"
+
+    def _get_keys_spend_from_activity(
+        self,
+        start_date: str,
+        end_date: str,
+    ) -> list[dict]:
+        """Aggregate spend by api_key from /user/daily/activity (v1 fallback).
+
+        Fetches all pages and groups spend per api_key.
+        The response format has: results[].breakdown.api_keys.{hash}.metrics/metadata
+
+        Args:
+            start_date: Start date (YYYY-MM-DD).
+            end_date: End date (YYYY-MM-DD).
+
+        Returns:
+            List of dicts with api_key, key_alias, total_spend.
+        """
+        all_entries = self._fetch_user_daily_activity_pages(start_date, end_date)
+
+        from collections import defaultdict
+
+        key_spend: dict[str, float] = defaultdict(float)
+        key_alias: dict[str, str] = {}
+
+        for entry in all_entries:
+            api_keys = entry.get("breakdown", {}).get("api_keys", {})
+            for api_key, key_data in api_keys.items():
+                if not api_key:
+                    continue
+                metrics = key_data.get("metrics", {})
+                key_spend[api_key] += metrics.get("spend", 0.0) or 0.0
+                if api_key not in key_alias:
+                    meta = key_data.get("metadata", {})
+                    key_alias[api_key] = meta.get("key_alias") or ""
+
+        return [
+            {
+                "api_key": k,
+                "key_alias": key_alias.get(k, ""),
+                "key_name": "",
+                "total_spend": spend,
+            }
+            for k, spend in key_spend.items()
+        ]
+
+    def _fetch_user_daily_activity_pages(
+        self,
+        start_date: str,
+        end_date: str,
+        page_size: int = 1000,
+    ) -> list[dict]:
+        """Fetch all pages from /user/daily/activity.
+
+        Args:
+            start_date: Start date (YYYY-MM-DD).
+            end_date: End date (YYYY-MM-DD).
+            page_size: Items per page.
+
+        Returns:
+            Merged list of activity entries from all pages.
+        """
+        all_results: list = []
+        page = 1
+
+        while True:
+            data = self._request(
+                "GET",
+                "/user/daily/activity",
+                params={
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "page": page,
+                    "page_size": page_size,
+                },
+            )
+
+            if isinstance(data, dict):
+                results = data.get("results", data.get("data", []))
+                all_results.extend(results)
+                metadata = data.get("metadata", {})
+                if not metadata.get("has_more", False):
+                    break
+            elif isinstance(data, list):
+                all_results.extend(data)
+                break
+            else:
+                break
+
+            page += 1
+
+        return all_results
 
     def list_keys(self) -> list[VirtualKey]:
         """List all virtual keys.
@@ -842,18 +932,63 @@ class LiteLLMClient:
     ) -> list | dict:
         """Get daily activity for the current user.
 
+        v1: Uses pagination, flattens nested {date, metrics, breakdown} into
+            per-model flat entries compatible with ActivityEntry.
+        v2: Simple request without pagination.
+
         Args:
             start_date: Start date (YYYY-MM-DD).
             end_date: End date (YYYY-MM-DD).
 
         Returns:
-            List of daily activity entries.
+            List of daily activity entries (flat dicts for v1, raw response for v2).
         """
+        if self.version == "v1":
+            raw_entries = self._fetch_user_daily_activity_pages(start_date, end_date)
+            return self._flatten_daily_activity(raw_entries)
+
         return self._request(
             "GET",
             "/user/daily/activity",
             params={"start_date": start_date, "end_date": end_date},
         )
+
+    @staticmethod
+    def _flatten_daily_activity(entries: list[dict]) -> list[dict]:
+        """Flatten v1 daily activity entries into per-model flat dicts.
+
+        v1 format: {date, metrics: {...}, breakdown: {models: {name: {metrics}}}}.
+        Output: list of flat dicts {date, model_group, spend, prompt_tokens, ...}.
+        """
+        flat: list[dict] = []
+        for entry in entries:
+            day = entry.get("date", "")
+            models = entry.get("breakdown", {}).get("models", {})
+            if models:
+                for model_name, model_data in models.items():
+                    m = model_data.get("metrics", {})
+                    flat.append({
+                        "date": day,
+                        "model_group": model_name,
+                        "spend": m.get("spend", 0.0),
+                        "prompt_tokens": m.get("prompt_tokens", 0),
+                        "completion_tokens": m.get("completion_tokens", 0),
+                        "total_tokens": m.get("total_tokens", 0),
+                        "api_requests": m.get("api_requests", 0),
+                    })
+            else:
+                # No model breakdown, use top-level metrics
+                m = entry.get("metrics", {})
+                flat.append({
+                    "date": day,
+                    "model_group": None,
+                    "spend": m.get("spend", 0.0),
+                    "prompt_tokens": m.get("prompt_tokens", 0),
+                    "completion_tokens": m.get("completion_tokens", 0),
+                    "total_tokens": m.get("total_tokens", 0),
+                    "api_requests": m.get("api_requests", 0),
+                })
+        return flat
 
     def get_team_daily_activity(
         self,

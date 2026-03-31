@@ -154,8 +154,10 @@ def by_key(
                     start_date=start_date, end_date=end_date, top_n=top,
                 )
             else:
+                # v1 activity fallback: date-filtered, same table format
                 print_global_spend_keys_fallback_table(
                     data, context_name=context_name, top_n=top,
+                    start_date=start_date, end_date=end_date,
                 )
         else:
             keys = client.list_keys()

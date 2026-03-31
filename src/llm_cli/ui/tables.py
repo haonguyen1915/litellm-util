@@ -302,6 +302,7 @@ def print_config_table(orgs: dict) -> None:
     table.add_column("Name", style="green")
     table.add_column("Environment", style="cyan")
     table.add_column("URL", style="dim")
+    table.add_column("Ver", style="yellow", width=4)
 
     for org_id, org in orgs.items():
         first = True
@@ -311,6 +312,7 @@ def print_config_table(orgs: dict) -> None:
                 org.name if first else "",
                 env_name,
                 env.url,
+                env.version,
             )
             first = False
         # Add separator between orgs
@@ -551,20 +553,22 @@ def print_global_spend_keys_fallback_table(
     data: list[dict],
     context_name: str = "",
     top_n: int = 0,
+    start_date: str = "",
+    end_date: str = "",
 ) -> None:
-    """Print all keys with spend from /global/spend/keys (fallback).
+    """Print all keys with spend (fallback for v1 proxies).
 
-    Used when the proxy doesn't support /user/daily/activity/aggregated.
     Data format: list of {api_key, key_alias, key_name, total_spend}.
-    Note: total_spend is cumulative (not date-filtered).
     """
     sorted_keys = sorted(data, key=lambda x: x.get("total_spend", 0), reverse=True)
     if top_n > 0:
         sorted_keys = sorted_keys[:top_n]
 
-    title = "Spend by API Key (all, cumulative)"
+    title = "Spend by API Key (all)"
     if context_name:
         title += f" on {context_name}"
+    if start_date and end_date:
+        title += f" ({start_date} to {end_date})"
 
     table = Table(title=title, show_header=True, header_style="bold cyan")
     table.add_column("#", style="dim", width=4)
@@ -595,10 +599,6 @@ def print_global_spend_keys_fallback_table(
     console.print(
         f"\nTotal: {len(sorted_keys)} API keys | Combined spend: {_format_spend(total_spend)}",
         style="dim",
-    )
-    console.print(
-        "Note: Showing cumulative spend (date filtering not supported by this proxy version)",
-        style="dim yellow",
     )
 
 

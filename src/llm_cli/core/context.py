@@ -21,6 +21,7 @@ class CurrentContext:
     environment: str
     url: str
     master_key: str
+    version: str = "v2"  # v1 = LiteLLM <=1.72.x, v2 = LiteLLM >=1.80.x
 
 
 def get_current_context(
@@ -83,6 +84,7 @@ def get_current_context(
         environment=env_name,
         url=env.url,
         master_key=env.master_key,
+        version=env.version,
     )
 
 
